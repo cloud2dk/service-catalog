@@ -27,21 +27,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Validate manifest.yaml
-        working-directory: services/access-roles
-        run: |
-          ../../scripts/validate.sh manifest.yaml
-
-      - name: build and upload artifacts
-        working-directory: services/access-roles
-        run: |
-          ../../scripts/build.sh
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Build Service Catalog
+        uses: ./.github/actions/service-catalog-build
         with:
-          name: artifacts
-          path: services/access-roles/artifacts
+          service-directory: access-roles
 
   dev-publish:
     runs-on: ubuntu-latest
@@ -49,60 +38,84 @@ jobs:
     needs:
       - build
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/access-roles/artifacts
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
-          role-session-name: GitHubActions
-          aws-region: ${{ env.HOME_REGION }}
+          service-directory: access-roles
 
       - name: Publish Dev Portfolios
-        working-directory: services/access-roles/artifacts
-        env:
-          VERSION: ${{ env.VERSION }}
-          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
-          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ../../../scripts/publish.sh dev
+        uses: ./.github/actions/service-catalog-publish
+        with:
+          environment: dev
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/access-roles/artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  dev-release:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs:
+      - dev-publish
+    steps:
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
+        with:
+          service-directory: access-roles
+
+      - name: Deploy Service Catalog
+        uses: ./.github/actions/service-catalog-release
+        with:
+          environment: dev
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          max-active-versions: 5
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/access-roles/artifacts
 
   prod-publish:
     runs-on: ubuntu-latest
     environment: prod
     needs:
-      - dev-publish
+      - dev-release
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/access-roles/artifacts
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
-          role-session-name: GitHubActions
-          aws-region: ${{ env.HOME_REGION }}
+          service-directory: access-roles
 
       - name: Publish Prod Portfolios
-        working-directory: services/access-roles/artifacts
-        env:
-          VERSION: ${{ env.VERSION }}
-          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
-          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ../../../scripts/publish.sh prod
+        uses: ./.github/actions/service-catalog-publish
+        with:
+          environment: prod
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/access-roles/artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  prod-release:
+    runs-on: ubuntu-latest
+    environment: prod
+    needs:
+      - prod-publish
+    steps:
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
+        with:
+          service-directory: access-roles
+
+      - name: Deploy Service Catalog
+        uses: ./.github/actions/service-catalog-release
+        with:
+          environment: prod
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          max-active-versions: 5
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/access-roles/artifacts

@@ -1,0 +1,47 @@
+name: 'Service Catalog Release'
+description: 'Deploy service catalog portfolios and products with version management'
+
+inputs:
+  environment:
+    description: 'Environment (dev or prod)'
+    required: true
+  version:
+    description: 'Version to deploy'
+    required: true
+  service-account-id:
+    description: 'AWS service account ID'
+    required: true
+  active-regions:
+    description: 'Comma-separated list of AWS regions'
+    required: true
+  max-active-versions:
+    description: 'Maximum number of active versions to keep'
+    required: false
+    default: '5'
+  home-region:
+    description: 'Home AWS region for authentication'
+    required: true
+  working-directory:
+    description: 'Working directory containing artifacts'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ inputs.service-account-id }}:role/cloud2-github-oicd
+        role-session-name: GitHubActions
+        aws-region: ${{ inputs.home-region }}
+
+    - name: Install Service Catalog Portfolios
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VERSION: ${{ inputs.version }}
+        SERVICE_ACCOUNT_ID: ${{ inputs.service-account-id }}
+        ACTIVE_REGIONS: ${{ inputs.active-regions }}
+        MAX_ACTIVE_VERSIONS: ${{ inputs.max-active-versions }}
+      run: |
+        ../../../scripts/release.sh ${{ inputs.environment }}

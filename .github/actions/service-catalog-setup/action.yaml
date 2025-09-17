@@ -1,0 +1,19 @@
+name: 'Service Catalog Setup'
+description: 'Checkout repository and download artifacts'
+
+inputs:
+  service-directory:
+    description: 'Service directory name (e.g., monitoring-baseline, access-roles)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifacts
+        path: services/${{ inputs.service-directory }}/artifacts

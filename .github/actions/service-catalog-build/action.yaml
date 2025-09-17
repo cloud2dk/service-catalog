@@ -1,0 +1,29 @@
+name: 'Service Catalog Build'
+description: 'Validate, build, and upload service catalog artifacts'
+
+inputs:
+  service-directory:
+    description: 'Service directory name (e.g., monitoring-baseline, access-roles)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate manifest.yaml
+      shell: bash
+      working-directory: services/${{ inputs.service-directory }}
+      run: |
+        ../../scripts/validate.sh manifest.yaml
+
+    - name: build and upload artifacts
+      shell: bash
+      working-directory: services/${{ inputs.service-directory }}
+      run: |
+        ../../scripts/build.sh
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: artifacts
+        path: services/${{ inputs.service-directory }}/artifacts
+        include-hidden-files: true

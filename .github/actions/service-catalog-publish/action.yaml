@@ -1,0 +1,46 @@
+name: 'Service Catalog Publish'
+description: 'Publish service catalog templates to S3 buckets'
+
+inputs:
+  environment:
+    description: 'Environment (dev or prod)'
+    required: true
+  version:
+    description: 'Version to publish'
+    required: true
+  service-account-id:
+    description: 'AWS service account ID'
+    required: true
+  active-regions:
+    description: 'Comma-separated list of AWS regions'
+    required: true
+  home-region:
+    description: 'Home AWS region for authentication'
+    required: true
+  working-directory:
+    description: 'Working directory containing artifacts'
+    required: true
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ inputs.service-account-id }}:role/cloud2-github-oicd
+        role-session-name: GitHubActions
+        aws-region: ${{ inputs.home-region }}
+
+    - name: Publish Portfolios
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VERSION: ${{ inputs.version }}
+        SERVICE_ACCOUNT_ID: ${{ inputs.service-account-id }}
+        ACTIVE_REGIONS: ${{ inputs.active-regions }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        ../../../scripts/publish.sh ${{ inputs.environment }}

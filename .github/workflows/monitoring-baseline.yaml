@@ -28,22 +28,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Validate manifest.yaml
-        working-directory: services/monitoring-baseline
-        run: |
-          ../../scripts/validate.sh manifest.yaml
-
-      - name: build and upload artifacts
-        working-directory: services/monitoring-baseline
-        run: |
-          ../../scripts/build.sh
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Build Service Catalog
+        uses: ./.github/actions/service-catalog-build
         with:
-          name: artifacts
-          path: services/monitoring-baseline/artifacts
-          include-hidden-files: true
+          service-directory: monitoring-baseline
 
   dev-publish:
     runs-on: ubuntu-latest
@@ -51,14 +39,10 @@ jobs:
     needs:
       - build
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/monitoring-baseline/artifacts
+          service-directory: monitoring-baseline
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -83,31 +67,21 @@ jobs:
     needs:
       - dev-publish
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/monitoring-baseline/artifacts
+          service-directory: monitoring-baseline
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy Service Catalog
+        uses: ./.github/actions/service-catalog-release
         with:
-          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
-          role-session-name: GitHubActions
-          aws-region: ${{ env.HOME_REGION }}
-
-      - name: Install Dev Service Catalog Portfolios
-        working-directory: services/monitoring-baseline/artifacts
-        env:
-          VERSION: ${{ env.VERSION }}
-          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
-          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
-          MAX_ACTIVE_VERSIONS: 5
-        run: |
-          ../../../scripts/release.sh dev
+          environment: dev
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          max-active-versions: 5
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/monitoring-baseline/artifacts
 
   prod-publish:
     runs-on: ubuntu-latest
@@ -115,14 +89,10 @@ jobs:
     needs:
       - dev-release
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/monitoring-baseline/artifacts
+          service-directory: monitoring-baseline
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -147,28 +117,18 @@ jobs:
     needs:
       - prod-publish
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup
+        uses: ./.github/actions/service-catalog-setup
         with:
-          name: artifacts
-          path: services/monitoring-baseline/artifacts
+          service-directory: monitoring-baseline
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy Service Catalog
+        uses: ./.github/actions/service-catalog-release
         with:
-          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
-          role-session-name: GitHubActions
-          aws-region: ${{ env.HOME_REGION }}
-
-      - name: Install Prod Service Catalog Portfolios
-        working-directory: services/monitoring-baseline/artifacts
-        env:
-          VERSION: ${{ env.VERSION }}
-          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
-          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
-          MAX_ACTIVE_VERSIONS: 5
-        run: |
-          ../../../scripts/release.sh prod
+          environment: prod
+          version: ${{ env.VERSION }}
+          service-account-id: ${{ env.SERVICE_ACCOUNT_ID }}
+          active-regions: ${{ env.ACTIVE_REGIONS }}
+          max-active-versions: 5
+          home-region: ${{ env.HOME_REGION }}
+          working-directory: services/monitoring-baseline/artifacts
