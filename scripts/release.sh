@@ -103,8 +103,9 @@ manage_product_versions() {
     local product_id=$1
     local region=$2
     local product_name=$3
+    local max_inactive_versions=30
 
-    echo "      Managing versions for product: $product_name (keeping latest $MAX_ACTIVE_VERSIONS active)"
+    echo "      Managing versions for product: $product_name (keeping latest $MAX_ACTIVE_VERSIONS active + $max_inactive_versions inactive)"
 
     # Get all provisioning artifacts sorted by creation date (newest first)
     local artifacts=$(aws servicecatalog list-provisioning-artifacts \
@@ -122,38 +123,48 @@ manage_product_versions() {
         exit 1
     fi
 
-    # Count total artifacts
+    # Count artifacts
     local total_artifacts=$(echo "$artifacts" | jq length)
-    if [ $? -ne 0 ]; then
-        echo "        Error: Failed to parse artifacts JSON"
-        exit 1
+    local active_artifacts=$(echo "$artifacts" | jq '[.[] | select(.Active == true)] | length')
+    local inactive_artifacts=$(echo "$artifacts" | jq '[.[] | select(.Active == false)] | length')
+
+    echo "        Found $total_artifacts total versions ($active_artifacts active, $inactive_artifacts inactive)"
+
+    # Step 1: Clean up old inactive versions first (keep only latest 30)
+    if [ "$inactive_artifacts" -gt "$max_inactive_versions" ]; then
+        local inactive_to_delete_count=$(($inactive_artifacts - $max_inactive_versions))
+        echo "        Deleting $inactive_to_delete_count old inactive versions..."
+
+        # Get inactive artifacts sorted by creation time, get oldest ones to delete
+        local inactive_to_delete=$(echo "$artifacts" | jq -r '[.[] | select(.Active == false)] | sort_by(.CreatedTime) | reverse | .['$max_inactive_versions':] | .[] | .Id')
+
+        for artifact_id in $inactive_to_delete; do
+            local artifact_name=$(echo "$artifacts" | jq -r ".[] | select(.Id == \"$artifact_id\") | .Name")
+            echo "        Deleting old inactive version: $artifact_name (ID: $artifact_id)"
+
+            aws servicecatalog delete-provisioning-artifact \
+                --product-id "$product_id" \
+                --provisioning-artifact-id "$artifact_id" \
+                --region "$region"
+
+            if [ $? -ne 0 ]; then
+                echo "        Error: Failed to delete $artifact_name"
+                exit 1
+            fi
+        done
     fi
 
-    echo "        Found $total_artifacts total versions"
-
-    # Count currently active artifacts
-    local active_artifacts=$(echo "$artifacts" | jq '[.[] | select(.Active == true)] | length')
-    echo "        Currently active versions: $active_artifacts"
-
-    # If we have more than MAX_ACTIVE_VERSIONS active, deprecate the older ones
+    # Step 2: Deprecate excess active versions
     if [ "$active_artifacts" -gt "$MAX_ACTIVE_VERSIONS" ]; then
-        echo "        Need to deprecate $(($active_artifacts - $MAX_ACTIVE_VERSIONS)) versions..."
+        local active_to_deprecate_count=$(($active_artifacts - $MAX_ACTIVE_VERSIONS))
+        echo "        Deprecating $active_to_deprecate_count excess active versions..."
 
-        # Get ONLY active artifacts, sort by creation time, then get ones to deprecate
-        # First get only active artifacts sorted by creation time (newest first)
-        local active_artifacts_sorted=$(echo "$artifacts" | jq '[.[] | select(.Active == true)] | sort_by(.CreatedTime) | reverse')
+        # Get active artifacts sorted by creation time (newest first), deprecate oldest
+        local active_to_deprecate=$(echo "$artifacts" | jq -r '[.[] | select(.Active == true)] | sort_by(.CreatedTime) | reverse | .['$MAX_ACTIVE_VERSIONS':] | .[] | .Id')
 
-        # Get artifacts to deprecate (active artifacts beyond the first MAX_ACTIVE_VERSIONS)
-        local artifacts_to_deprecate=$(echo "$active_artifacts_sorted" | jq -r ".[$MAX_ACTIVE_VERSIONS:] | .[] | .Id")
-
-        if [ -z "$artifacts_to_deprecate" ]; then
-            echo "        No artifacts to deprecate"
-            return 0
-        fi
-
-        for artifact_id in $artifacts_to_deprecate; do
-            local artifact_name=$(echo "$active_artifacts_sorted" | jq -r ".[] | select(.Id == \"$artifact_id\") | .Name")
-            echo "        Deprecating artifact: $artifact_name (ID: $artifact_id)"
+        for artifact_id in $active_to_deprecate; do
+            local artifact_name=$(echo "$artifacts" | jq -r ".[] | select(.Id == \"$artifact_id\") | .Name")
+            echo "        Deprecating excess active version: $artifact_name (ID: $artifact_id)"
 
             aws servicecatalog update-provisioning-artifact \
                 --product-id "$product_id" \
@@ -166,11 +177,9 @@ manage_product_versions() {
                 exit 1
             fi
         done
-
-        echo "        ✓ Version lifecycle management completed"
-    else
-        echo "        ✓ Active version count ($active_artifacts) is within limit ($MAX_ACTIVE_VERSIONS)"
     fi
+
+    echo "        ✓ Version cleanup completed"
 }
 
 # Create product or add new version
