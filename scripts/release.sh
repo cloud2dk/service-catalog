@@ -218,6 +218,9 @@ setup_product() {
             --output text --region "$region" 2>/dev/null)
 
         if [ -z "$existing_version" ] || [ "$existing_version" = "None" ]; then
+            # Manage version lifecycle BEFORE adding new version to avoid hitting limits
+            manage_product_versions "$product_id" "$region" "$product_name"
+
             echo "      Adding version $VERSION to existing product"
             aws servicecatalog create-provisioning-artifact \
                 --product-id "$product_id" \
@@ -229,9 +232,6 @@ setup_product() {
                 }" \
                 --region "$region"
             echo "      ✓ Version $VERSION added to product: $product_id"
-
-            # Manage version lifecycle after adding new version
-            manage_product_versions "$product_id" "$region" "$product_name"
         else
             echo "      ✓ Version $VERSION already exists for product: $product_id"
 
