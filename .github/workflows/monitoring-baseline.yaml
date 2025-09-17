@@ -77,11 +77,43 @@ jobs:
         run: |
           ../../../scripts/publish.sh dev
 
+  dev-release:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs:
+      - dev-publish
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
+          role-session-name: GitHubActions
+          aws-region: ${{ env.HOME_REGION }}
+
+      - name: Install Dev Service Catalog Portfolios
+        working-directory: services/monitoring-baseline/artifacts
+        env:
+          VERSION: ${{ env.VERSION }}
+          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
+          MAX_ACTIVE_VERSIONS: 5
+        run: |
+          ../../../scripts/release.sh dev
+
   prod-publish:
     runs-on: ubuntu-latest
     environment: prod
     needs:
-      - dev-publish
+      - dev-release
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -108,3 +140,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ../../../scripts/publish.sh prod
+
+  prod-release:
+    runs-on: ubuntu-latest
+    environment: prod
+    needs:
+      - prod-publish
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
+          role-session-name: GitHubActions
+          aws-region: ${{ env.HOME_REGION }}
+
+      - name: Install Prod Service Catalog Portfolios
+        working-directory: services/monitoring-baseline/artifacts
+        env:
+          VERSION: ${{ env.VERSION }}
+          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
+          MAX_ACTIVE_VERSIONS: 5
+        run: |
+          ../../../scripts/release.sh prod
