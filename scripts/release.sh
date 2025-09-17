@@ -154,7 +154,7 @@ manage_product_versions() {
             aws servicecatalog update-provisioning-artifact \
                 --product-id "$product_id" \
                 --provisioning-artifact-id "$artifact_id" \
-                --active false \
+                --no-active \
                 --region "$region"
 
             if [ $? -ne 0 ]; then
