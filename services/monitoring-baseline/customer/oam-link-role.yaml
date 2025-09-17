@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  OperationsAccountId:
+    Type: String
+    Description: The account ID of the operations account
+
+Resources:
+  OamLinkRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-oam-link-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref OperationsAccountId
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchAutomaticDashboardsAccess
+        - arn:aws:iam::aws:policy/AWSXrayReadOnlyAccess

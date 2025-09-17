@@ -1,0 +1,35 @@
+# ignore artifacts folder
+artifacts/
+
+# ignore .vscode folder
+.vscode/
+
+# ignore .DS_Store
+.DS_Store
+
+# ignore .venv folder
+.venv/
+venv/
+# ignore .pytest_cache folder
+.pytest_cache/
+
+# ignore .pytest_cache folder
+.pytest_cache/
+
+# ignore .pytest_cache folder
+.pytest_cache/
+
+__pycache__/
+
+.aws-sam/
+
+.venv/
+
+.pytest_cache/
+
+# ignore previews directory
+operations/lambdas/fresh_webhook/fresh_webhook/tests/previews/
+
+# ignore debugging tools
+debugging-tools/
+

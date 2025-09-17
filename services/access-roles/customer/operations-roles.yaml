@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for creating IAM roles, policies, and Lambda function."
+
+Parameters:
+  CustomerId:
+    Type: String
+    Description: The customer ID, used as the external ID for the Ops UI role
+
+  UsePermissionBoundary:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Specify whether to create and enforce a permission boundary (true/false)."
+
+  OperationsAccountId:
+    Type: String
+    Description: "The AWS account ID for the operations account."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - CustomerId
+          - UsePermissionBoundary
+          - OperationsAccountId
+    ParameterLabels:
+      CustomerId:
+        default: "Customer ID, used as the external ID for the Ops UI role"
+      UsePermissionBoundary:
+        default: "Should we create and enforce a permission boundary?"
+      OperationsAccountId:
+        default: "Operations Account ID"
+
+Conditions:
+  PermissionBoundaryEnabled: !Equals [!Ref UsePermissionBoundary, "true"]
+
+Resources:
+  ### Roles ###
+  AdminRole:  
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
+      RoleName: cloud2-operator-admin
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperationsAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref CustomerId
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperationsAccountId}:root"
+            Action: sts:TagSession
+      PermissionsBoundary:
+        !If [
+          PermissionBoundaryEnabled,
+          "arn:aws:iam::aws:policy/ReadOnlyAccess",
+          !Ref "AWS::NoValue",
+        ]
+
+  ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/ReadOnlyAccess"
+      RoleName: "cloud2-operator-readonly"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperationsAccountId}:root"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref CustomerId
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperationsAccountId}:root"
+            Action: sts:TagSession
+
+  SSMAutomationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "cloud2-ssm-automation-role"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ssm.amazonaws.com"
+                - "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+      PermissionsBoundary:
+        !If [
+          PermissionBoundaryEnabled,
+          "arn:aws:iam::aws:policy/ReadOnlyAccess",
+          !Ref "AWS::NoValue",
+        ]
+
+  ### Automation Documents ###
+
+  SSMDocumentManagePermissionBoundary:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      Name: cloud2-break-glass
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "0.3"
+        description: "Manage permission boundary on the cloud2-admin IAM role"
+        assumeRole: !GetAtt SSMAutomationRole.Arn
+        parameters:
+          Action:
+            type: String
+            description: "Action to perform: 'enable' to add ReadOnlyAccess boundary, 'disable' to remove it"
+            allowedValues:
+              - enable
+              - disable
+        mainSteps:
+          - name: ManagePermissionBoundary
+            action: aws:branch
+            inputs:
+              Choices:
+                - NextStep: AddPermissionBoundary
+                  Variable: "{{Action}}"
+                  StringEquals: enable
+                - NextStep: RemovePermissionBoundary
+                  Variable: "{{Action}}"
+                  StringEquals: disable
+          - action: aws:executeAwsApi
+            name: AddPermissionBoundary
+            inputs:
+              Service: iam
+              Api: PutRolePermissionsBoundary
+              RoleName: !Ref AdminRole
+              PermissionsBoundary: "arn:aws:iam::aws:policy/ReadOnlyAccess"
+            isEnd: true
+
+          - action: aws:executeAwsApi
+            name: RemovePermissionBoundary
+            inputs:
+              Service: iam
+              Api: DeleteRolePermissionsBoundary
+              RoleName: !Ref AdminRole
+            isEnd: true
+
+  CustomerIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/customer-id
+      Type: String
+      Value: !Ref CustomerId

@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: "Cloud2 Usage Data Sync Infrastructure"
+
+Parameters:
+  DestinationBucketName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/reporting-bucket-name
+
+  OperationsEventBusArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/customer-event-bus-arn
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - DestinationBucketName
+          - OperationsEventBusArn
+    ParameterLabels:
+      DestinationBucketName:
+        default: "Destination Bucket Name (from SSM)"
+      OperationsEventBusArn:
+        default: "Event Bus ARN (from SSM)"
+
+Resources:
+  SyncTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cloud2-sync-topic
+
+  SyncQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: cloud2-sync-queue
+
+  SyncQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SyncQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt SyncQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref SyncTopic
+
+  TopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SyncTopic
+      Protocol: sqs
+      Endpoint: !GetAtt SyncQueue.Arn
+
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SyncTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SyncTopic
+
+  SyncEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-usage-data-created
+      Description: Capture S3 object creation events from external account
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+      EventBusName: !Ref OperationsEventBusArn
+      Targets:
+        - Id: SendToSNS
+          Arn: !Ref SyncTopic
+
+  SyncFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-reporting-sync-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: cloud2-reporting-sync-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowS3Access
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:HeadObject
+                Resource:
+                  - arn:aws:s3:::*
+                  - arn:aws:s3:::*/*
+              - Sid: AllowSQSAccess
+                Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt SyncQueue.Arn
+
+  SyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-reporting-sync
+      Description: Lambda function to sync data from CUR and FOCUS to S3
+      CodeUri: ./lambdas/sync
+      Handler: sync.index.handler
+      Runtime: python3.12
+      Timeout: 30
+      Role: !GetAtt SyncFunctionRole.Arn
+      Environment:
+        Variables:
+          DESTINATION_BUCKET: !Ref DestinationBucketName
+
+  SyncFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt SyncQueue.Arn
+      FunctionName: !Ref SyncFunction
+      BatchSize: 1
+      Enabled: true

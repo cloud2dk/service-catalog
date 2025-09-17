@@ -1,0 +1,51 @@
+{
+  "version": "0",
+  "id": "abc12345-6789-0123-def4-567890abcdef",
+  "detail-type": "CloudWatch Alarm State Change",
+  "source": "aws.cloudwatch",
+  "account": "907174171861",
+  "time": "2024-04-30T07:24:41.400+0000",
+  "region": "eu-west-1",
+  "resources": ["arn:aws:cloudwatch:eu-west-1:907174171861:alarm:failing_lambda_alarm"],
+  "detail": {
+    "alarmName": "failing_lambda_alarm",
+    "alarmDescription": "This metric monitors the number of failed lambda invocation on the monitored lambda function",
+    "awsAccountId": "907174171861",
+    "alarmConfigurationUpdatedTimestamp": "2024-04-30T07:24:41.400+0000",
+    "state": {
+      "value": "ALARM",
+      "reason": "Threshold Crossed: 1 out of the last 1 datapoints [1.0 (30/04/24 07:23:00)] was greater than or equal to the threshold (1.0) (minimum 1 datapoint for OK -> ALARM transition).",
+      "reasonData": "{\"version\":\"1.0\",\"queryDate\":\"2024-04-30T07:24:41.399+0000\",\"startDate\":\"2024-04-30T07:23:00.000+0000\",\"period\":60,\"recentDatapoints\":[1.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2024-04-30T07:23:00.000+0000\",\"sampleCount\":2.0,\"value\":1.0}]}",
+      "timestamp": "2024-04-30T07:24:41.400+0000"
+    },
+    "previousState": {
+      "value": "OK",
+      "reason": "Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].",
+      "reasonData": "{\"version\":\"1.0\",\"queryDate\":\"2024-04-30T07:21:46.649+0000\",\"period\":60,\"recentDatapoints\":[],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2024-04-30T07:20:00.000+0000\"}]}",
+      "timestamp": "2024-04-30T07:21:46.651+0000"
+    },
+    "configuration": {
+      "metrics": [
+        {
+          "id": "failed_lambda_invocations",
+          "metricStat": {
+            "metric": {
+              "namespace": "AWS/Lambda",
+              "name": "Errors",
+              "dimensions": {
+                "Resource": "cloud2-testing-failing-lambda",
+                "FunctionName": "cloud2-testing-failing-lambda",
+                "Severity": "critical"
+              }
+            },
+            "period": 60,
+            "stat": "Maximum",
+            "unit": "Count"
+          },
+          "returnData": true,
+          "accountId": "907826444281"
+        }
+      ]
+    }
+  }
+}

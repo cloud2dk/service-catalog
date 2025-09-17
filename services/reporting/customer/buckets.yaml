@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for Cloud2 Cost and Usage Reporting"
+
+Parameters:
+  OperationsAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-account-id
+  
+  OperationsEventBusName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-event-bus-name
+
+  CrossAccountEventsRoleName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/cross-account-events-role-name
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - OperationsAccountId
+          - OperationsEventBusName
+    ParameterLabels:
+      OperationsAccountId:
+        default: "Operations Account ID (from SSM)"
+      OperationsEventBusName:
+        default: "Event Bus Name (from SSM)"
+
+
+Resources:
+  ReportDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloud2-report-data-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteAfter6Months
+            Status: Enabled
+            ExpirationInDays: 180
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReportDataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AWSCostAndUsageReport
+            Effect: Allow
+            Principal:
+              Service: 
+                - billingreports.amazonaws.com
+                - bcm-data-exports.amazonaws.com
+            Action:
+              - s3:GetBucketAcl
+              - s3:GetBucketPolicy
+              - s3:PutObject
+            Resource:
+              - !GetAtt ReportDataBucket.Arn
+              - !Sub "${ReportDataBucket.Arn}/*"
+          - Sid: AllowSSLRequestsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt ReportDataBucket.Arn
+              - !Sub "${ReportDataBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: AllowBucketAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${OperationsAccountId}:root
+            Action:
+              - s3:GetBucketLocation
+              - s3:ListBucket
+            Resource: !GetAtt ReportDataBucket.Arn
+
+          - Sid: AllowOperationsAccountRead
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${OperationsAccountId}:root
+            Action:
+              - s3:GetObject
+              - s3:GetObjectAcl
+              - s3:GetObjectVersion
+              - s3:GetObjectVersionAcl
+            Resource:
+              - !GetAtt ReportDataBucket.Arn
+              - !Sub "${ReportDataBucket.Arn}/*"
+
+  S3EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-report-data-s3-event
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - !Ref ReportDataBucket
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}
+          Id: "cloud2-report-data-s3-event"
+          RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRoleName}

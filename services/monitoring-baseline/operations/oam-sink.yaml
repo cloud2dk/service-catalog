@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  OAMSink:
+    Type: AWS::Oam::Sink
+    Properties:
+      Name: cloud2-cloudwatch-sink
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - oam:CreateLink
+              - oam:UpdateLink
+            Resource: "*"
+            Condition:
+              ForAllValues:StringEquals:
+                oam:ResourceTypes: AWS::CloudWatch::Metric
+
+Outputs:
+  SinkArn:
+    Description: ARN of the Operations Sink
+    Value: !GetAtt OAMSink.Arn

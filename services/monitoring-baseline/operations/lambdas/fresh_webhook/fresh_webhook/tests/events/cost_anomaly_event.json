@@ -1,0 +1,62 @@
+{
+  "version": "0",
+  "id": "3b8f82d0-4553-6a26-b792-c4ef8b308438",
+  "detail-type": "CostAnomalyDetected",
+  "source": "cloud2.ce.anomaly",
+  "account": "167813811038",
+  "time": "2025-04-03T09:22:14Z",
+  "region": "eu-west-1",
+  "resources": [],
+  "detail": {
+    "accountId": "167813811038",
+    "accountName": "gocollective-root",
+    "anomalyStartDate": "2025-04-02T00:00:00Z",
+    "anomalyEndDate": "2025-04-02T00:00:00Z",
+    "anomalyId": "6afa2b42-72c4-4447-b5b8-c5d026560b88",
+    "dimensionalValue": "Amazon QuickSight",
+    "monitorArn": "arn:aws:ce::167813811038:anomalymonitor/1a4e14f2-cf46-4a9f-a23b-c83536f7cc01",
+    "monitorName": "cloud2-service-monitor",
+    "monitorType": "DIMENSIONAL",
+    "anomalyScore": {
+      "maxScore": 0.23,
+      "currentScore": 0.23
+    },
+    "impact": {
+      "maxImpact": 9.56,
+      "totalExpectedSpend": 20.53,
+      "totalActualSpend": 30.09,
+      "totalImpact": 9.56,
+      "totalImpactPercentage": 46.57
+    },
+    "rootCauses": [
+      {
+        "service": "Amazon QuickSight",
+        "region": "global",
+        "linkedAccount": "343024493395",
+        "linkedAccountName": "data-all-prd-data",
+        "usageType": "QS-Reader-Usage-Paid-Session",
+        "impactContribution": 9.67
+      },
+      {
+        "service": "Amazon QuickSight",
+        "region": "global",
+        "linkedAccount": "343024493395",
+        "linkedAccountName": "data-all-prd-data",
+        "usageType": "QS-User-Enterprise-Month",
+        "impactContribution": 0.34
+      },
+      {
+        "service": "Amazon QuickSight",
+        "region": "eu-west-1",
+        "linkedAccount": "343024493395",
+        "linkedAccountName": "data-all-prd-data",
+        "usageType": "EU-QS-Enterprise-SPICE",
+        "impactContribution": 0.11
+      }
+    ],
+    "anomalyDetailsLink": "https://console.aws.amazon.com/costmanagement/home#/anomaly-detection/monitors/1a4e14f2-cf46-4a9f-a23b-c83536f7cc01/anomalies/6afa2b42-72c4-4447-b5b8-c5d026560b88",
+    "subscriptionId": "2e05224d-496c-4bd3-8983-c123bbf9000b",
+    "subscriptionName": "cloud2-anomaly-alerts",
+    "eventName": "CostAnomalyDetected"
+  }
+} 

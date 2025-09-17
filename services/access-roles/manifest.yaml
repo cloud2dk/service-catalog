@@ -1,0 +1,54 @@
+service: access-roles
+s3_prefix: services/access-roles
+github_repository: https://github.com/cloud2dk/access-roles
+
+portfolios:
+  - name: cloud2-spotter-access
+    account_type: customer
+    description: "Portfolio containing the spotter access role."
+    products:
+      - name: cloud2-spotter-access-role
+        description: "Spotter access role"
+        template: customer/spotter-role.yaml
+        scope: global
+        parameters:
+          ExternalId:
+            Type: String
+            Description: The external ID provided by Spotter for secure role assumption.
+          SpotterAccountId:
+            Type: String
+            Description: The AWS account ID for Spotter to assume the role.
+
+  - name: cloud2-access-roles
+    account_type: customer
+    description: > 
+      Contains the roles needed for Cloud2 to access accounts, there is a variance in the roles based on the access needs and separation of duties.
+    products:
+      - name: cloud2-access-roles
+        description: "Cloud2 roles used by the operations team to access accounts."
+        template: customer/operations-roles.yaml
+        scope: global
+        parameters:
+          ExternalId:
+            Type: String
+            Description: The external ID provided by Spotter for secure role assumption.
+          SpotterAccountId:
+            Type: String
+            Description: The AWS account ID for Spotter to assume the role.
+  
+  - name: cloud2-operations-access-roles
+    account_type: operations
+    description: "Roles used by Cloud2 to access the customer operations account."
+
+    products:
+      - name: cloud2-operations-roles
+        description: "Cloud2 admin roles used by the operations team to access accounts."
+        template: operations/roles.yaml
+        scope: global
+        parameters:
+          ExternalId:
+            Type: String
+            Description: The external ID provided by Spotter for secure role assumption.
+          SpotterAccountId:
+            Type: String
+            Description: The AWS account ID for Spotter to assume the role.

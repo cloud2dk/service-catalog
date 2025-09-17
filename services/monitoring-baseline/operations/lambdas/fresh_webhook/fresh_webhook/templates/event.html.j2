@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS EventBridge Event</title>
+    <style>
+        :root {
+            --pink: #ff69b4;
+            --light-pink: #ffd1e3;
+            --black: #222222;
+            --white: #ffffff;
+            --light-gray: #f7f7f7;
+            --medium-gray: #e0e0e0;
+            --text-gray: #666666;
+            --border-color: #f0f0f0;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: var(--light-gray);
+            color: var(--black);
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .event-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: var(--white);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .event-header {
+            background-color: var(--pink);
+            padding: 15px 20px;
+            color: var(--white);
+        }
+        
+        .event-title {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .event-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .event-meta-item {
+            margin-right: 15px;
+        }
+
+        .event-info {
+            background-color: var(--light-pink);
+            padding: 12px 20px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .info-item {
+            padding: 5px 0;
+        }
+        
+        .info-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-gray);
+            letter-spacing: 0.5px;
+        }
+        
+        .info-value {
+            font-weight: 500;
+            font-size: 14px;
+            word-break: break-word;
+        }
+        
+        .event-body {
+            padding: 20px;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+        }
+        
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--pink);
+            margin-bottom: 10px;
+            border-bottom: 1px solid var(--light-pink);
+            padding-bottom: 5px;
+        }
+        
+        .resource-list {
+            list-style: none;
+        }
+        
+        .resource-item {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background-color: var(--light-gray);
+            border-left: 3px solid var(--pink);
+            font-family: monospace;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        
+        .json-tree {
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            background-color: var(--light-gray);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .event-footer {
+            padding: 12px 20px;
+            background-color: var(--light-gray);
+            color: var(--text-gray);
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        @media (max-width: 600px) {
+            .event-container {
+                margin: 0;
+            }
+            
+            .event-meta {
+                flex-direction: column;
+            }
+            
+            .event-meta-item {
+                margin-bottom: 5px;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="event-container">
+        <!-- Event Header -->
+        <div class="event-header">
+            <h1 class="event-title">{{ event['detail-type'] or 'AWS Event' }}</h1>
+            <div class="event-meta">
+                <div>
+                    <span class="event-meta-item">Source: {{ event.source }}</span>
+                    <span class="event-meta-item">Version: {{ event.version }}</span>
+                </div>
+                <span>ID: {{ event.id }}</span>
+            </div>
+        </div>
+        
+        <!-- Basic Event Information -->
+        <div class="event-info">
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Time</div>
+                    <div class="info-value">{{ event['time']|datetime }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Region</div>
+                    <div class="info-value">{{ event.region }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Account</div>
+                    <div class="info-value">{{ event.account }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Detail Type</div>
+                    <div class="info-value">{{ event['detail-type'] or 'Not specified' }}</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Event Body -->
+        <div class="event-body">
+            {% if event.resources %}
+            <!-- Resources Section -->
+            <div class="section">
+                <h2 class="section-title">Resources ({{ event.resources|length }})</h2>
+                <ul class="resource-list">
+                    {% for resource in event.resources %}
+                    <li class="resource-item">{{ resource }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            <!-- Raw JSON Details -->
+            <div class="section">
+                <h2 class="section-title">Raw Event Detail</h2>
+                <div class="json-tree">
+                    {{ event.detail|tojson(indent=2) }}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Event Footer -->
+        <div class="event-footer">
+            <span>Generated: {{ now()|datetime }}</span>
+            <span>AWS EventBridge</span>
+        </div>
+    </div>
+
+    <!-- Modal for Raw JSON -->
+    <div id="jsonModal" class="modal">
+        <div class="modal-content">
+            <button class="close-button" onclick="closeModal()">×</button>
+            <h2>Raw Event JSON</h2>
+            <div class="json-tree" id="rawJsonContent">
+                {{ event|tojson(indent=2) }}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showRawJson() {
+            document.getElementById('jsonModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('jsonModal').style.display = 'none';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target == document.getElementById('jsonModal')) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html> 

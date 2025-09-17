@@ -1,0 +1,36 @@
+{
+  "version": "0",
+  "id": "abc12345-6789-0123-def4-567890abcdef",
+  "detail-type": "GuardDuty Finding",
+  "source": "aws.guardduty",
+  "account": "123456789012",
+  "time": "2024-04-29T12:00:00Z",
+  "region": "us-east-1",
+  "resources": [],
+  "detail": {
+    "schemaVersion": "2.0",
+    "accountId": "123456789012",
+    "region": "us-east-1",
+    "partition": "aws",
+    "id": "12abcdef-3456-7890-abcd-ef1234567890",
+    "arn": "arn:aws:guardduty:us-east-1:123456789012:detector/abcdef1234567890abcdef/findings/12abcdef34567890abcdef",
+    "type": "UnauthorizedAccess:EC2/RDPBruteForce",
+    "resource": {
+      "resourceType": "Instance",
+      "instanceDetails": {
+        "instanceId": "i-0123456789abcdef0",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "example-instance"
+          }
+        ]
+      }
+    },
+    "severity": 5.0,
+    "createdAt": "2024-04-29T11:45:00Z",
+    "updatedAt": "2024-04-29T12:00:00Z",
+    "title": "Unusual login detected",
+    "description": "User login was detected from a new or unusual location."
+  }
+}

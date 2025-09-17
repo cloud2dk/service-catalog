@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for Cloud2 Event Data Glue Table"
+
+Parameters:
+  EventDataBucket:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/event-data-bucket-name
+
+  OpsUiAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/ops-ui-account-id
+
+  OpsUiConsumerRoleName:
+    Type: String
+    Description: The name of the consumer role from the ops-ui account
+    Default: dev-api-role
+
+Resources:
+  
+  # Register S3 Location
+  RegisterS3Location:
+    Type: AWS::LakeFormation::Resource
+    Properties:
+      ResourceArn: !Sub 'arn:aws:s3:::${EventDataBucket}'
+      UseServiceLinkedRole: true
+
+  EventDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: customer_event_data
+        Description: "Database for Cloud2 event data"
+    DependsOn: RegisterS3Location
+
+  EventTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref EventDatabase
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: customer_events
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          projection.enabled: "true"
+          projection.year.type: "integer"
+          projection.year.range: "2020,2030"
+          projection.year.interval: "1"
+          projection.month.type: "integer"
+          projection.month.range: "1,12"
+          projection.month.digits: "2"
+          projection.day.type: "integer"
+          projection.day.range: "1,31"
+          projection.day.digits: "2"
+          storage.location.template: !Sub "s3://${EventDataBucket}/events/${!year}/${!month}/${!day}"
+        PartitionKeys:
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: version
+              Type: string
+            - Name: id
+              Type: string
+            - Name: detail_type
+              Type: string
+            - Name: source
+              Type: string
+            - Name: account
+              Type: string
+            - Name: time
+              Type: timestamp
+            - Name: region
+              Type: string
+            - Name: resources
+              Type: array<string>
+            - Name: detail
+              Type: string
+          Location: !Sub "s3://${EventDataBucket}/events/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              serialization.format: "1"
+              case.insensitive: "false"
+              ignore.malformed.json: "true"
+              "mapping.detail_type": "detail-type"
+
+  DataRoleTag:
+    Type: AWS::LakeFormation::Tag
+    Properties:
+      TagKey: data-role
+      TagValues: 
+        - producer
+        - consumer
+
+  DataDomainTag:
+    Type: AWS::LakeFormation::Tag
+    Properties:
+      TagKey: data-domain
+      TagValues:
+        - customer-events
+
+  DataLakeSettings:
+    Type: AWS::LakeFormation::DataLakeSettings
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E3012    
+    Properties:
+      Parameters:
+        CROSS_ACCOUNT_VERSION: "4"
+      TrustedResourceOwners:
+        - !Ref AWS::AccountId
+        - !Ref OpsUiAccountId
+      CreateDatabaseDefaultPermissions:
+        - Principal:
+            DataLakePrincipalIdentifier: "IAM_ALLOWED_PRINCIPALS"
+          Permissions:
+            - ALL
+      CreateTableDefaultPermissions:
+        - Principal:
+            DataLakePrincipalIdentifier: "IAM_ALLOWED_PRINCIPALS"
+          Permissions:
+            - ALL
+
+
+  OpsUIPermissions:
+    Type: AWS::LakeFormation::PrincipalPermissions
+    DependsOn:
+      - TableTagAssociations
+    Properties:
+      Catalog: !Ref AWS::AccountId
+      Principal:
+        DataLakePrincipalIdentifier: !Sub 'arn:aws:iam::${OpsUiAccountId}:role/${OpsUiConsumerRoleName}'
+      Resource:
+        LFTagPolicy:
+          CatalogId: !Ref AWS::AccountId
+          Expression:
+            - TagKey: data-role
+              TagValues:
+                - producer
+            - TagKey: data-domain
+              TagValues:
+                - customer-events
+          ResourceType: TABLE
+      Permissions:
+        - SELECT
+        - DESCRIBE
+      PermissionsWithGrantOption:
+        - SELECT
+        - DESCRIBE
+
+  # RAM Resource Share
+  EventDataShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: customer-events-share
+      AllowExternalPrincipals: true
+      Principals: 
+        - !Ref OpsUiAccountId
+      ResourceArns:
+        - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${EventDatabase}/customer_events'
+
+  TableTagAssociations:
+    Type: AWS::LakeFormation::TagAssociation
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref AWS::AccountId
+          DatabaseName: !Ref EventDatabase
+          Name: !Ref EventTable
+      LFTags:
+        - CatalogId: !Ref AWS::AccountId
+          TagKey: data-role
+          TagValues:
+            - producer
+        - CatalogId: !Ref AWS::AccountId
+          TagKey: data-domain
+          TagValues:
+            - customer-events
+    DependsOn: 
+      - DataRoleTag
+      - DataDomainTag
+
+Outputs:
+  EventDatabaseName:
+    Description: "Name of the event database"
+    Value: !Ref EventDatabase
+
+  EventTableName:
+    Description: "Name of the event table"
+    Value: !Ref EventTable 

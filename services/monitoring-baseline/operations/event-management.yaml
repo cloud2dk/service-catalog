@@ -1,0 +1,467 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  EventBusName:
+    Type: String
+    Description: The name of the event bus for customer events
+    Default: cloud2-customer-events
+
+  OpsUiAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/ops-ui-account-id
+
+  OpsUiRegion:
+    Type: String
+    Description: The region of the ops-ui account
+    Default: us-central-1
+
+  OpsUiEventBusName:
+    Type: String
+    Description: The name of the event bus for ops-ui events
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - EventBusName
+          - OpsUiAccountId
+          - OpsUiRegion
+          - OpsUiEventBusName
+    ParameterLabels:
+      EventBusName:
+        default: "Event Bus Name"
+      OpsUiAccountId:
+        default: "Ops UI Account ID"
+      OpsUiRegion:
+        default: "Ops UI Region"
+      OpsUiEventBusName:
+        default: "Ops UI Event Bus Name"
+
+Resources:
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Ref EventBusName
+
+  EventBusArnParameter:
+    Type: AWS::SSM::Parameter    
+    Properties:
+      Name: /cloud2/customer-event-bus-arn
+      Description: The ARN of the Event Bus that customer accounts will send events to
+      Type: String
+      Value: !GetAtt EventBus.Arn
+
+  # Add a Dead Letter Queue for EventBridge rules
+  EventsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: cloud2-events-dlq
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  EventBusPolicy:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      EventBusName: !Ref EventBus
+      StatementId: SharedAccountAccess
+      Statement:
+        Effect: Allow
+        Principal:
+          AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+        Action:
+          - events:PutEvents
+        Resource: !GetAtt EventBus.Arn
+
+  EventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/events/${EventBusName}"
+
+  EventDataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: !Sub "cloud2-event-data-${AWS::AccountId}"      
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        NotificationConfiguration:
+          EventBridgeConfiguration:
+            EventBridgeEnabled: true
+
+  EventDataBucketNameParameter:
+    Type: AWS::SSM::Parameter    
+    Properties:
+      Name: /cloud2/event-data-bucket-name
+      Description: The name of the S3 bucket where event data is stored
+      Type: String
+      Value: !Ref EventDataBucket
+  
+  LogGroupResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: AllowEventBridgeToWrite
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "${EventLogGroup.Arn}"
+            }
+          ]
+        }
+
+
+
+  OpsUiCrossAccountRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-ops-ui-cross-account-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EventBridgeCrossAccountAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !Sub "arn:aws:events:${OpsUiRegion}:${OpsUiAccountId}:event-bus/${OpsUiEventBusName}"
+
+
+  LogAllEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-log-all-customer-events
+      Description: Captures all events from the customer events bus and logs them to CloudWatch
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - prefix: ""
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt EventLogGroup.Arn
+          Id: LogAllEventsToCloudWatch
+        - Arn: !GetAtt CustomerEventsFunction.Arn
+          Id: StoreCustomerEvents
+        - Arn: !Sub arn:aws:events:${OpsUiRegion}:${OpsUiAccountId}:event-bus/${OpsUiEventBusName}
+          Id: OpsUiTarget
+          RoleArn: !GetAtt OpsUiCrossAccountRole.Arn
+  FreshServiceSecret:
+    Type: AWS::SecretsManager::Secret 
+    Properties:
+      Name: cloud2-fresh-service-api-secret
+      Description: Secret used to store the secret for the Freshservice monitoring tool webhook
+
+  FreshServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-fresh-servicewebhook
+      Description: Lambda function to forward events to Fresh Service
+      CodeUri: ./lambdas/fresh_webhook/
+      Handler: fresh_webhook.index.handler
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          FRESH_WEBHOOK_SECRET: !Ref FreshServiceSecret
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref FreshServiceSecret
+            - Effect: Allow
+              Action:
+                - cloudwatch:ListTagsForResource
+              Resource: "*"
+
+  CustomerEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-customer-events
+      Description: Lambda function to store events in S3
+      CodeUri: ./lambdas/customer_events
+      Handler: customer_events.index.handler
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          EVENT_BUCKET: !Ref EventDataBucket
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: 
+                - !GetAtt EventDataBucket.Arn
+                - !Sub "${EventDataBucket.Arn}/*"
+      
+
+  CustomerEventsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CustomerEventsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LogAllEventsRule.Arn
+
+  CloudWatchAlarmsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FreshServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.alarms.cloudwatch.amazonaws.com
+      SourceArn: !Sub arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:*
+
+  EventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FreshServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/*
+
+  HealthEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-health-events
+      Description: Catches AWS Health events forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.health
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  CostAnomalyDetectionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-cost-anomaly-detection
+      Description: Catches AWS Cost Anomaly Detection events forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.ce.anomaly
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  InspectorFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-inspector-findings
+      Description: Catches Amazon Inspector findings forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.inspector
+        detail-type:
+          - Inspector Findings
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  GuardDutyDetectorUpdatedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-guardduty-detector-updated
+      Description: Catches AWS GuardDuty detector updates forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - guardduty.amazonaws.com
+          eventName:
+            - CreateDetector
+            - UpdateDetector
+            - DeleteDetector
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  GuardDutyFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-guardduty-findings
+      Description: Catches AWS GuardDuty findings forwaded from customer accounts, from the customer event bus
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  BackupJobFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-backup-job-failed
+      Description: Catches AWS Backup job failed events forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.backup
+        detail-type:
+          - Backup Job State Change
+          - Restore Job State Change
+        detail:
+          state:
+            - FAILED
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  SecurityHubFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-securityhub-findings
+      Description: Catches AWS Security Hub findings forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - aws.securityhub
+        detail-type:
+          - Security Hub Findings
+      State: DISABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  SNSMessageRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-sns-events
+      Description: Catches SNS events forwaded from customer accounts
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - SNSMessage
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+
+
+  LaunchStatusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-launch-status
+      Description: Rule to trigger the launch status function when requested
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - launch-status-request
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:aws:events:${OpsUiRegion}:${OpsUiAccountId}:event-bus/${OpsUiEventBusName}
+          Id: OpsUiTarget
+          RoleArn: !GetAtt OpsUiCrossAccountRole.Arn
+
+  UpdateAccountPrincipalsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-update-account-principals
+      Description: Lambda function to update the account principals
+      CodeUri: lambdas/update_account_principals/
+      Handler: update_account_principals/index.handler
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref EventBusName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - events:DescribeEventBus
+                - events:PutPermission
+                - events:RemovePermission
+              Resource: !GetAtt EventBus.Arn
+
+Outputs:
+  EventBusArn:
+    Description: ARN of the Operations Event Bus
+    Value: !GetAtt EventBus.Arn
+  
+  EventBusName:
+    Description: Name of the Operations Event Bus
+    Value: !Ref EventBus
+
+  EventsDLQUrl:
+    Description: URL of the Dead Letter Queue for events
+    Value: !Ref EventsDLQ
+
+  EventsDLQArn:
+    Description: ARN of the Dead Letter Queue for events
+    Value: !GetAtt EventsDLQ.Arn
+  

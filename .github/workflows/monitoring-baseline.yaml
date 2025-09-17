@@ -1,0 +1,108 @@
+name: monitoring-baseline
+
+env:
+  HOME_REGION: eu-central-1
+  ACTIVE_REGIONS: eu-central-1,eu-west-1,us-east-1
+
+  SERVICE_ACCOUNT_ID: ${{ vars.SERVICE_ACCOUNT_ID }}
+  SAM_CLI_TELEMETRY: 0
+  VERSION: 1.2.${{ github.run_number }}
+
+permissions:
+  id-token: write
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/monitoring-baseline/**'
+      - 'scripts/**'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate manifest.yaml
+        working-directory: services/monitoring-baseline
+        run: |
+          ../../scripts/validate.sh manifest.yaml
+
+      - name: build and upload artifacts
+        working-directory: services/monitoring-baseline
+        run: |
+          ../../scripts/build.sh
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
+          include-hidden-files: true
+
+  dev-publish:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs:
+      - build
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
+          role-session-name: GitHubActions
+          aws-region: ${{ env.HOME_REGION }}
+
+      - name: Publish Dev Portfolios
+        working-directory: services/monitoring-baseline/artifacts
+        env:
+          VERSION: ${{ env.VERSION }}
+          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ../../../scripts/publish.sh dev
+
+  prod-publish:
+    runs-on: ubuntu-latest
+    environment: prod
+    needs:
+      - dev-publish
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.SERVICE_ACCOUNT_ID }}:role/cloud2-github-oicd
+          role-session-name: GitHubActions
+          aws-region: ${{ env.HOME_REGION }}
+
+      - name: Publish Prod Portfolios
+        working-directory: services/monitoring-baseline/artifacts
+        env:
+          VERSION: ${{ env.VERSION }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+        run: |
+          ../../../scripts/publish.sh prod

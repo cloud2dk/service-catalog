@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  OperationsAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-account-id
+    Description: The AWS account ID of the operations account
+
+  OperationsRegion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-region
+    Description: The region of the operations account
+
+  OperationsEventBusName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-event-bus-name
+    Description: The name of the operations event bus
+
+  CrossAccountEventsRole:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/cross-account-events-role-name
+    Description: The role for the cross account events
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - OperationsAccountId
+          - OperationsEventBusName
+          - CrossAccountEventsRole
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - OperationsRegion
+
+    ParameterLabels:
+      OperationsAccountId:
+        default: "Operations Account ID (from SSM)"
+      OperationsRegion:
+        default: "Operations Region"
+      OperationsEventBusName:
+        default: "Event Bus Name (from SSM)"
+      CrossAccountEventsRole:
+        default: "Cross-Account Events Role Name (from SSM)"
+
+Resources:
+
+  HealthEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-aws-health
+      Description: Rule to forward Health events to the operations account
+      EventPattern:
+        source:
+          - aws.health
+        detail-type:
+          - AWS Health Event
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-aws-health-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+
+  InspectorEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-amazon-inspector
+      Description: Rule to forward Amazon Inspector events to the operations account
+      EventPattern:
+        source:
+          - aws.inspector
+        detail-type:
+          - Inspector Finding
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-amazon-inspector-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+
+  GuardDutyFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-guardduty-findings
+      Description: Rule to forward GuardDuty findings to the operations account
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-guardduty-findings-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+  
+  GuardDutyDetectorUpdatedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-guardduty-detector-updated
+      Description: Rule to forward GuardDuty detector updates to the operations account
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventName:
+            - CreateDetector
+            - UpdateDetector
+            - DeleteDetector
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-guardduty-detector-updated-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+
+  BackupJobFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-backup-job-failed
+      Description: Rule to forward Backup job failures to the operations account
+      EventPattern:
+        source:
+          - aws.backup
+        detail-type:
+          - Backup Job State Change
+          - Restore Job State Change
+        detail:
+          state:
+            - FAILED
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-backup-job-failed-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"

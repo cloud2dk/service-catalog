@@ -1,0 +1,43 @@
+service: reporting-baseline
+description: "Reporting baseline service"
+s3_prefix: services/reporting-baseline
+github_repository: https://github.com/cloud2dk/reporting
+
+portfolios:
+  - name: cloud2-reporting-operations
+    account_type: operations
+    description: "Reporting operations portfolio"
+    products:
+      - name: cloud2-reporting-operations-buckets
+        description: "Buckets needed in the operations account for reporting."
+        template: operations/operations-buckets.yaml
+        scope: global
+
+      - name: cloud2-reporting-operations-cur-glue
+        description: "CUR and FOCUS Glue Databses and tables needed in the operations account for reporting."
+        template: operations/customer-cur-glue.yml
+        scope: global
+        
+      - name: cloud2-reporting-operations-bucket-sync
+        description: "Bucket sync from customer account events to reporting bucket in operations account."
+        template: operations/bucket-sync.yml
+        scope: global
+        
+      - name: cloud2-reporting-athena-cur-query
+        description: "Athena workgroup for querying Cost and Usage Reports."
+        template: customer/athena-cur-query.yml
+        scope: global        
+
+  - name: cloud2-reporting-customer
+    account_type: customer
+    description: "Reporting customer portfolio"
+    products:
+      - name: cloud2-reporting-buckets
+        description: "Buckets needed in the customer account for reporting."
+        template: customer/buckets.yaml
+        scope: global
+
+      - name: cloud2-reporting-usage-exports
+        description: "Usage exports needed in the customer account for reporting."
+        template: customer/usage-exports.yml
+        scope: us-east-1

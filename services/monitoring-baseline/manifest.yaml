@@ -1,0 +1,87 @@
+service: monitoring-baseline
+description: "Monitoring baseline service for monitoring baseline."
+s3_prefix: services/monitoring-baseline
+
+portfolios:
+  - name: cloud2-monitoring-operations
+    account_type: operations
+    description: "Monitoring operations portfolio for monitoring baseline."
+    stack_name: cloud2-monitoring-operations-portfolio
+
+    products:
+      - name: cloud2-monitoring-operations-event-management
+        description: "Event management product for operations accounts, this should only be installed in the main region"
+        template: operations/event-management.yaml
+        scope: global
+
+      - name: cloud2-monitoring-operations-oam-sink
+        description: "OAM sink product for operations accounts, this should only be installed in the main region"
+        template: operations/oam-sink.yaml
+        scope: regional
+        depends_on:
+          - cloud2-monitoring-operations-event-management
+
+      - name: cloud2-monitoring-operations-glue
+        description: "Glue stack for operations accounts, this should be installed globally"
+        template: operations/customer-event-glue.yml
+        scope: global
+        depends_on:
+          - cloud2-monitoring-operations-event-management
+
+      - name: cloud2-monitoring-operations-customer-event-glue
+        description: "Glue stack for customer accounts, this should be installed in all customer regions"
+        template: operations/customer-event-glue.yml
+        scope: regional
+        depends_on:
+          - cloud2-monitoring-operations-event-management
+
+  - name: cloud2-monitoring
+    account_type: customer
+    description: "Monitoring customer portfolio for monitoring baseline."
+    stack_name: cloud2-monitoring-portfolio
+    products:
+      - name: cloud2-monitoring-service-management-regional
+        description: "Service management for the customer account, this should be installed in all monitored regions"
+        template: customer/service-management-regional.yaml
+        scope: regional
+
+      - name: cloud2-monitoring-cost-anomalies
+        description: "Cost anomalies monitoring for customer accounts"
+        template: customer/cost-anomalies.yaml
+        scope: global
+
+      - name: cloud2-monitoring-service-management
+        description: "Service management for the customer account."
+        template: customer/service-management.yaml
+        scope: global
+        depends_on:
+          - cloud2-monitoring-service-management-regional
+        parameters:
+          OperationsAccountId:
+            Type: String
+            Description: The AWS account ID of the operations account
+
+      - name: cloud2-monitoring-events
+        description: "Event rules product for customer accounts, this should only be installed in the main region"
+        template: customer/events.yaml
+        scope: regional
+        depends_on:
+          - cloud2-monitoring-service-management-regional
+          - cloud2-monitoring-service-management
+
+      - name: cloud2-monitoring-oam-link-role
+        description: "OAM link role for customer accounts, this should only be installed in all customer regions"
+        template: customer/oam-link-role.yaml
+        scope: global
+        depends_on:
+          - cloud2-monitoring-service-management-regional
+          - cloud2-monitoring-service-management
+
+      - name: cloud2-monitoring-oam-link
+        description: "OAM link product for accounts, this should only be installed in all customer regions"
+        template: customer/oam-link.yaml
+        scope: regional
+        depends_on:
+          - cloud2-monitoring-service-management-regional
+          - cloud2-monitoring-service-management
+          - cloud2-monitoring-oam-link-role

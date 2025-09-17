@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Athena workgroup for querying existing Cost and Usage Report tables"
+
+Resources:
+  # S3 Bucket for Athena Query Results
+  QueryResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloud2-athena-results-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteQueryResults
+            Status: Enabled
+            ExpirationInDays: 7
+            NoncurrentVersionExpirationInDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  # Athena Workgroup for CUR Analysis
+  CURAnalysisWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: cloud2-cur-analysis
+      Description: "Workgroup for analyzing Cost and Usage Reports with enforced configuration"
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${QueryResultsBucket}/results/"
+          EncryptionConfiguration:
+            EncryptionOption: SSE_S3
+        BytesScannedCutoffPerQuery: 10737418240  # 10GB limit per query
+        RequesterPaysEnabled: false
+
+  # SSM Parameters for reference
+  WorkGroupNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/athena-workgroup-name
+      Type: String
+      Value: !Ref CURAnalysisWorkGroup
+      Description: "Name of the Athena workgroup for CUR analysis"
+
+  QueryResultsBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/athena-query-results-bucket
+      Type: String
+      Value: !Ref QueryResultsBucket
+      Description: "S3 bucket for Athena query results"
+
+Outputs:
+  WorkGroupName:
+    Description: "Name of the Athena workgroup for CUR analysis"
+    Value: !Ref CURAnalysisWorkGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-WorkGroupName"
+
+  QueryResultsBucket:
+    Description: "S3 bucket for storing Athena query results"
+    Value: !Ref QueryResultsBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-QueryResultsBucket"

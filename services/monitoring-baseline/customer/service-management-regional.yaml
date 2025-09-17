@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  OperationsAccountId:
+    Type: String
+    Description: The AWS account ID of the operations account
+
+  OperationsRegion:
+    Type: String
+    Description: The region of the operations account
+
+  AutomationRoleName:
+    Type: String
+    Description: The name of the automation role
+    Default: "cloud2-ssm-automation-role"
+
+  CrossAccountEventsRoleName:
+    Type: String
+    Description: The name of the cross-account events role
+    Default: "cloud2-cross-account-events-role"
+
+  OperationsEventBusName:
+    Type: String
+    Description: The name of the operations event bus
+    Default: "cloud2-customer-events"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - OperationsAccountId
+          - OperationsRegion
+          - AutomationRoleName
+          - CrossAccountEventsRoleName
+          - OperationsEventBusName
+
+    ParameterLabels:
+      OperationsAccountId:
+        default: "Operations Account ID"
+      OperationsRegion:
+        default: "Operations Region"
+      AutomationRoleName:
+        default: "Automation Role Name"
+      CrossAccountEventsRoleName:
+        default: "Cross-Account Events Role Name"
+      OperationsEventBusName:
+        default: "Operations Event Bus Name"
+
+Resources:
+
+  EventTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cloud2-events
+      Subscription:
+        - Protocol: lambda
+          Endpoint: !GetAtt EventForwarderFunction.Arn
+
+
+  EventForwarderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-event-forwarder
+      Handler: index.handler
+      Runtime: python3.12
+      CodeUri: ./lambdas/event_forwarder
+      Environment:
+        Variables:
+          EVENT_BUS_ARN: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource:
+                Fn::Sub: arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName} 
+
+  EventForwarderFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref EventForwarderFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref EventTopic
+
+
+
+  TestMetricAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cloud2-test-metric-alarm
+      AlarmDescription: Triggers when Test metric in Cloud2/Events namespace exceeds threshold of 1
+      MetricName: Test
+      Namespace: Cloud2/Events
+      Statistic: Sum
+      Period: 60  # 1 minute
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref EventTopic
+
+  OperationsAccountParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/operations-account-id
+      Type: String
+      Value: !Ref OperationsAccountId
+    
+  OperationsRegionParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/operations-region
+      Type: String
+      Value: !Ref OperationsRegion
+    
+  AutomationRoleNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/automation-role-name
+      Type: String
+      Value: !Ref AutomationRoleName
+
+  OperationsEventBusNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/operations-event-bus-name
+      Type: String
+      Value: !Ref OperationsEventBusName

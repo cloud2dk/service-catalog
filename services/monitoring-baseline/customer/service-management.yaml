@@ -1,0 +1,628 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  OperationsAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-account-id
+  
+  OperationsEventBusName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-event-bus-name
+
+  AutomationRoleName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/automation-role-name
+
+  CrossAccountEventsRoleName:
+    Type: String
+    Default: cross-account-events-role-name
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - OperationsAccountId
+          - OperationsEventBusName
+          - AutomationRoleName
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - CrossAccountEventsRoleName
+    ParameterLabels:
+      OperationsAccountId:
+        default: "Operations Account ID (from SSM)"
+      OperationsEventBusName:
+        default: "Event Bus Name (from SSM)"
+      AutomationRoleName:
+        default: "Automation Role Name (from SSM)"
+      CrossAccountEventsRoleName:
+        default: "Cross-Account Events Role Name"
+
+
+
+Resources:
+
+  CrossAccountEventsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref CrossAccountEventsRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow 
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EventBridgeCrossAccountAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+
+  CrossAccountEventsRoleNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/cross-account-events-role-name
+      Type: String
+      Value: !Ref CrossAccountEventsRoleName
+
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: cloud2-events
+
+  EventBusPolicy:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      EventBusName: !Ref EventBus
+      StatementId: OperationsAccountAccess
+      Statement:
+        Effect: Allow
+        Principal:
+          AWS: !Sub arn:aws:iam::${OperationsAccountId}:root
+        Action:
+          - events:PutEvents
+        Resource: !GetAtt EventBus.Arn
+
+  EventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/events/cloud2-events
+
+  EventLogGroupPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: AllowEventBridgeToWriteLogs
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "${EventLogGroup.Arn}"
+            }
+          ]
+        }
+
+  LogAllEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-log-all-events
+      Description: Captures all events from Cloud2 event bus and logs them to CloudWatch
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - prefix: ""
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt EventLogGroup.Arn
+          Id: LogAllEventsTarget
+
+  ImportPortfolioDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      DocumentFormat: YAML
+      Name: cloud2-import-portfolio
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "0.3"
+        description:
+          Automation for importing Service Catalog portfolio and configuring
+          launch constraints.
+        assumeRole: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+
+        parameters:
+          PortfolioId:
+            type: String
+            description: The ID of the shared portfolio to import.
+
+          Region:
+            type: String
+            description: The region of the portfolio to import
+
+        mainSteps:
+          - name: AcceptPortfolioShare
+            action: aws:executeScript
+            inputs:
+              Runtime: python3.11
+              Handler: handler
+              InputPayload:
+                PortfolioId: "{{ PortfolioId }}"
+                Region: "{{ Region }}"
+              Script: |
+                import boto3
+
+                def handler(event, context):
+                    region = event['Region']
+                    portfolio_id = event['PortfolioId']
+                    
+                    # Initialize boto3 clients
+                    sts = boto3.client('sts')
+                    sc = boto3.client('servicecatalog', region_name=region)
+
+                    # Accept the portfolio share
+                    response = sc.accept_portfolio_share(PortfolioId=portfolio_id)
+
+                    return response
+          - name: SetPortfolioAccess
+            action: aws:executeScript
+            inputs:
+              Runtime: python3.11
+              Handler: handler
+              InputPayload:
+                PortfolioId: "{{ PortfolioId }}"
+                Region: "{{ Region }}"
+              Script: |
+                import boto3
+                import os
+
+                def handler(event, context):
+                    region = event['Region']
+                    portfolio_id = event['PortfolioId']
+                    
+                    # Get the automation role name from environment
+                    ssm = boto3.client('ssm', region_name=region)
+                    automation_role_name_param = ssm.get_parameter(Name='/cloud2/automation-role-name')
+                    automation_role_name = automation_role_name_param['Parameter']['Value']
+                    
+                    # Initialize boto3 clients
+                    sts = boto3.client('sts')
+                    sc = boto3.client('servicecatalog', region_name=region)
+
+                    # Get the current AWS account ID
+                    account_id = sts.get_caller_identity()['Account']
+                    
+                    # Construct IAM principal ARN pattern
+                    principal_arn = f'arn:aws:iam::{account_id}:role/{automation_role_name}'
+                    
+                    # Associate IAM Principal with the portfolio
+                    sc.associate_principal_with_portfolio(
+                        PortfolioId=portfolio_id,
+                        PrincipalARN=principal_arn,
+                        PrincipalType='IAM'
+                    )
+
+  ImportPortfolioRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-import-portfolio
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - import-portfolio
+      State: ENABLED
+      Targets:
+        - Id: Cloud2SSMAutomation
+          Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${ImportPortfolioDocument}"
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+          InputTransformer:
+            InputPathsMap:
+              PortfolioId: "$.detail.portfolio_id"
+              Region: "$.detail.region"
+            InputTemplate: |
+              {
+                "PortfolioId": ["<PortfolioId>"],
+                "Region": ["<Region>"]
+              }
+
+  LaunchProductDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      DocumentFormat: YAML
+      Name: cloud2-launch-product
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "0.3"
+        description: Automation for launching Service Catalog products
+        assumeRole: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+        parameters:
+          ProductId:
+            type: String
+            description: The ID of the Service Catalog product to launch
+
+          Version:
+            type: String
+            description: The version of the product to launch
+
+          Region:
+            type: String
+            description: The region where the Service Catalog product is located
+
+          ProvisioningParameters:
+            type: String
+            description: Parameters required to launch the product as a comma-separated string
+            default: ""
+
+        mainSteps:
+          - name: LaunchProduct
+            action: aws:executeScript
+            inputs:
+              Runtime: python3.11
+              Handler: handler
+              InputPayload:
+                ProductId: "{{ ProductId }}"
+                Version: "{{ Version }}"
+                ProvisioningParameters: "{{ ProvisioningParameters }}"
+                Region: "{{ Region }}"
+              Script: |
+                import boto3
+                import json
+                def handler(event, context):
+                    try:
+                        print(json.dumps(event, indent=4))
+                        
+                        # Get parameters directly from the root of the event object
+                        # No need for array handling since parameters are coming as direct string values
+                        Region = event.get('Region')
+                        ProductId = event.get('ProductId')
+                        Version = event.get('Version')
+                        ProvisioningParameters = event.get('ProvisioningParameters', '')
+                        
+                        if not all([Region, ProductId, Version]):
+                            raise Exception(f"Missing required parameters. Got: {event}")
+                        
+                        sc = boto3.client('servicecatalog', region_name=Region)
+
+                        ProductResponse = sc.describe_product(Id=ProductId)
+                        ProductViewSummary = ProductResponse.get('ProductViewSummary', {})
+                        ProductName = ProductViewSummary.get('Name')
+
+                        if not ProductName:
+                            raise Exception(f"Product name not found for ProductId {ProductId}")
+
+                        ProvisioningArtifacts = sc.list_provisioning_artifacts(ProductId=ProductId)
+                        ProvisioningArtifactId = None
+                        for Artifact in ProvisioningArtifacts.get('ProvisioningArtifactDetails', []):
+                            if Artifact.get('Name') == Version:
+                                ProvisioningArtifactId = Artifact.get('Id')
+                                break
+
+                        if not ProvisioningArtifactId:
+                            raise Exception(f"Provisioning artifact '{Version}' not found for ProductId {ProductId}")
+
+                        print(f"Provisioning artifact ID: {ProvisioningArtifactId}")
+
+                        ParametersList = []
+                        if ProvisioningParameters:
+                            try:
+                                Pairs = ProvisioningParameters.split(',')
+                                for Pair in Pairs:
+                                    if '=' in Pair:
+                                        Key, Value = Pair.split('=', 1)
+                                        ParametersList.append({"Key": Key.strip(), "Value": Value.strip()})
+                            except Exception as e:
+                                raise Exception(f"Failed to parse ProvisioningParameters string: {str(e)}")
+                                
+                        try:
+                            LaunchResponse = sc.provision_product(
+                                ProductId=ProductId,
+                                ProvisioningArtifactId=ProvisioningArtifactId,
+                                ProvisionedProductName=ProductName,
+                                ProvisioningParameters=ParametersList
+                            )
+                            return LaunchResponse
+                        except sc.exceptions.InvalidParametersException as e:
+                            raise Exception(f"Invalid parameters or product already exists: {str(e)}")
+                        except Exception as e:
+                            raise Exception(f"Failed to provision product: {str(e)}")
+
+                    except Exception as e:
+                        raise Exception(f"Unexpected error: {str(e)}")
+
+  LaunchProductRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-launch-product
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - launch-product
+      State: ENABLED
+      Targets:
+        - Id: Cloud2SSMAutomation
+          Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${LaunchProductDocument}"
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+          InputTransformer:
+            InputPathsMap:
+              ProductId: "$.detail.product_id"
+              ProvisioningParameters: "$.detail.provisioning_parameters"
+              Region: "$.detail.region"
+              Version: "$.detail.version"
+            InputTemplate: |
+              {
+                "ProductId": ["<ProductId>"],
+                "Version": ["<Version>"],
+                "Region": ["<Region>"],
+                "ProvisioningParameters": ["<ProvisioningParameters>"]
+              }
+
+  UpdateProductDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      DocumentFormat: YAML
+      Name: cloud2-update-product
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "0.3"
+        description: Automation for updating Service Catalog products
+        assumeRole: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+        parameters:
+          ProductId:
+            type: String
+            description: The ID of the Service Catalog product to update
+          Region:
+            type: String
+            description: The region where the Service Catalog product is located
+          Version:
+            type: String
+            description: The version of the product to update
+          ProvisioningParameters:
+            type: String
+            description: Parameters required to update the product as a comma-separated string
+            default: ""
+        mainSteps:
+          - name: UpdateProduct
+            action: aws:executeScript
+            inputs:
+              Runtime: python3.11
+              Handler: handler
+              InputPayload:
+                ProductId: "{{ ProductId }}"
+                Version: "{{ Version }}"
+                ProvisioningParameters: "{{ ProvisioningParameters }}"
+                Region: "{{ Region }}"
+              Script: |
+                import boto3
+                import json
+                from datetime import datetime
+                
+                def handler(event, context):
+                    try:
+                        print("Input event:")
+                        print(json.dumps(event, indent=4))
+                        
+                        # Handle array inputs by taking first element if it's a list
+                        Region = event['Region'][0] if isinstance(event['Region'], list) else event['Region']
+                        ProductId = event['ProductId'][0] if isinstance(event['ProductId'], list) else event['ProductId']
+                        Version = event['Version'][0] if isinstance(event['Version'], list) else event['Version']
+                        ProvisioningParameters = event['ProvisioningParameters'][0] if isinstance(event['ProvisioningParameters'], list) else event['ProvisioningParameters']
+
+                        print(f"Processed parameters:")
+                        print(f"Region: {Region}")
+                        print(f"ProductId: {ProductId}")
+                        print(f"Version: {Version}")
+                        print(f"ProvisioningParameters: {ProvisioningParameters}")
+
+                        # Initialize Service Catalog client
+                        sc = boto3.client('servicecatalog', region_name=Region)
+                        
+                        # Display account information for debugging
+                        sts = boto3.client('sts')
+                        identity = sts.get_caller_identity()
+                        print(f"Running as: {identity['Arn']} in account {identity['Account']}")
+
+                        # Step 1: Find the provisioned product
+                        try:
+                            # Using scan_provisioned_products instead of list_provisioned_products
+                            print("Fetching provisioned products...")
+                            ProvisionedProductsResponse = sc.scan_provisioned_products()
+                            ProvisionedProducts = ProvisionedProductsResponse.get('ProvisionedProducts', [])
+                            print(f"Found {len(ProvisionedProducts)} provisioned products in the account")
+                            
+                            # Debug: Print all product IDs
+                            print("All product IDs in the account:")
+                            for p in ProvisionedProducts:
+                                print(f"  - {p.get('Name')} (ID: {p.get('Id')}, ProductId: {p.get('ProductId')})")
+
+                            # Filter products matching the given ProductId
+                            MatchingProducts = [
+                                p for p in ProvisionedProducts if p['ProductId'] == ProductId
+                            ]
+
+                            print(f"Filtering for ProductId: '{ProductId}'")
+                            print(f"Found {len(MatchingProducts)} matching products")
+
+                            if not MatchingProducts:
+                                # Check for similar IDs to help debug typos
+                                product_ids = set(p.get('ProductId') for p in ProvisionedProducts)
+                                print("Checking for similar product IDs...")
+                                for pid in product_ids:
+                                    if pid and ProductId and (pid.startswith(ProductId[:5]) or ProductId.startswith(pid[:5])):
+                                        print(f"Potential similar ID: {pid} vs. {ProductId}")
+                                
+                                raise Exception(f"No provisioned product found for ProductId: {ProductId}")
+                            elif len(MatchingProducts) > 1:
+                                raise Exception(f"Multiple provisioned products found for ProductId: {ProductId}. Specify one explicitly.")
+
+                            ProvisionedProductId = MatchingProducts[0]['Id']
+                            print(f"Found provisioned product: {MatchingProducts[0]['Name']} (ID: {ProvisionedProductId})")
+
+                            # Step 2: Find the provisioning artifact by version
+                            print(f"Fetching provisioning artifacts for product {ProductId}...")
+                            provisioning_artifacts = sc.list_provisioning_artifacts(ProductId=ProductId)
+                            print(f"Found {len(provisioning_artifacts.get('ProvisioningArtifactDetails', []))} artifacts")
+                            
+                            provisioning_artifact_id = None
+                            for artifact in provisioning_artifacts.get('ProvisioningArtifactDetails', []):
+                                artifact_name = artifact.get('Name')
+                                artifact_id = artifact.get('Id')
+                                print(f"  - Artifact: {artifact_name} (ID: {artifact_id})")
+                                if artifact_name == Version:
+                                    provisioning_artifact_id = artifact_id
+                                    print(f"    ✓ This is a match for version {Version}")
+
+                            if not provisioning_artifact_id:
+                                raise Exception(f"Provisioning artifact '{Version}' not found for ProductId {ProductId}")
+                                
+                            print(f"Using provisioning artifact with version {Version} (ID: {provisioning_artifact_id})")
+
+                            # Convert comma-separated string to list of key-value pairs
+                            params_list = []
+                            if ProvisioningParameters:
+                                for param in ProvisioningParameters.split(','):
+                                    if '=' in param:
+                                        key, value = param.strip().split('=', 1)
+                                        params_list.append({"Key": key.strip(), "Value": value.strip()})
+                                        
+                            print(f"Parsed parameters: {json.dumps(params_list, indent=2)}")
+
+                            # Update the provisioned product
+                            try:
+                                print(f"Updating provisioned product {ProvisionedProductId}...")
+                                update_response = sc.update_provisioned_product(
+                                    ProvisionedProductId=ProvisionedProductId,
+                                    ProductId=ProductId,
+                                    ProvisioningArtifactId=provisioning_artifact_id,
+                                    ProvisioningParameters=params_list
+                                )
+                                print("Update request successful!")
+                                return update_response
+                            except sc.exceptions.InvalidParametersException as e:
+                                print(f"Invalid parameters: {str(e)}")
+                                raise Exception(f"Invalid parameters: {str(e)}")
+                            except Exception as e:
+                                print(f"Failed to update product: {str(e)}")
+                                raise Exception(f"Failed to update product: {str(e)}")
+
+                        except Exception as e:
+                            print(f"Failed to retrieve product information: {str(e)}")
+                            raise Exception(f"Failed to retrieve product information: {str(e)}")
+
+                    except Exception as e:
+                        print(f"Unexpected error: {str(e)}")
+                        raise Exception(f"Unexpected error: {str(e)}")
+
+  UpdateProductRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-update-product
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - update-product
+      State: ENABLED
+      Targets:
+        - Id: Cloud2SSMAutomation
+          Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${UpdateProductDocument}"
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AutomationRoleName}"
+          InputTransformer:
+            InputPathsMap:
+              ProductId: "$.detail.product_id"
+              ProvisioningParameters: "$.detail.provisioning_parameters"
+              Region: "$.detail.region"
+              Version: "$.detail.version"
+            InputTemplate: |
+              {
+                "ProductId": ["<ProductId>"],
+                "Version": ["<Version>"],
+                "Region": ["<Region>"],
+                "ProvisioningParameters": ["<ProvisioningParameters>"]
+              }
+
+  LaunchStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-launch-status
+      Handler: index.handler
+      Runtime: python3.12
+      CodeUri: ./lambdas/launch_status
+      Environment:
+        Variables:
+          EVENT_BUS_ARN: !Sub "arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - servicecatalog:SearchProvisionedProducts
+                - servicecatalog:DescribeProvisionedProduct
+                - servicecatalog:DescribeProduct
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource: !Sub "arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+
+  LaunchStatusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-launch-status
+      EventBusName: !Ref EventBus
+      Description: Rule to trigger the launch status function when requested
+      EventPattern:
+        source:
+          - cloud2.services
+        detail-type:
+          - launch-status-request
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LaunchStatusFunction.Arn
+          Id: LaunchStatusTarget
+
+  LaunchStatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LaunchStatusFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LaunchStatusRule.Arn
+
+Outputs:
+  EventBusName:
+    Description: Name of the cloud2 event bus
+    Value: !Ref EventBus
+
+  ImportPortfolioDocumentArn:
+    Description: ARN of the Import Portfolio Automation
+    Value: !Ref ImportPortfolioDocument
+
+  LaunchProductDocumentArn:
+    Description: ARN of the Launch Product Automation
+    Value: !Ref LaunchProductDocument
+
+  UpdateProductDocumentArn:
+    Description: ARN of the Update Product Automation
+    Value: !Ref UpdateProductDocument

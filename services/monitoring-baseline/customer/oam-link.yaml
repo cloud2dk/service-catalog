@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  OamSinkIdentifierArn:
+    Type: String
+    Description: The ARN of the OAM sink
+
+Resources:
+  OamLink:
+    Type: AWS::Oam::Link
+    Properties:
+      LabelTemplate: "$AccountName"
+      ResourceTypes:
+        - "AWS::CloudWatch::Metric"
+      SinkIdentifier: !Ref OamSinkIdentifierArn

@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "CloudFormation template for creating IAM roles, policies, and Lambda function."
+
+Parameters:
+
+  OpsUIAccountId:
+    Type: String
+    Description: "The account ID of the Ops UI account"
+
+  CustomerId:
+    Type: String
+    Description: "The customer ID, used as the external ID for the Ops UI role"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Manual Input Required"
+        Parameters:
+          - OpsUIAccountId
+          - CustomerId
+    ParameterLabels:
+      OpsUIAccountId:
+        default: "Ops UI Account ID"
+      CustomerId:
+        default: "Customer ID, used as the external ID for the Ops UI role"
+
+
+Resources:
+  OpsUiAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-ops-ui
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${OpsUIAccountId}:root
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref CustomerId
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OpsUIAccountId}:root"
+            Action: sts:TagSession
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  SSMAutomationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-ssm-automation-role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: 
+                - "ssm.amazonaws.com"
+                - "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+
+
+  OpsUiAccountIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/ops-ui-account-id
+      Type: String
+      Value: !Ref OpsUIAccountId
+
+  CustomerIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /cloud2/customer-id
+      Type: String
+      Value: !Ref CustomerId

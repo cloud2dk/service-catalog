@@ -1,0 +1,489 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for setting up Glue database and table for CUR data"
+
+Parameters:
+
+  CustomerId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/customer-id
+
+  ReportingBucketName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/reporting-bucket-name
+
+  OpsUiAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/ops-ui-account-id
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - CustomerId
+          - ReportingBucketName
+          - OpsUiAccountId
+    ParameterLabels:
+      CustomerId:
+        default: "Customer ID (from SSM)"
+      ReportingBucketName:
+        default: "Reporting Bucket Name (from SSM)"
+      OpsUiAccountId:
+        default: "Ops UI Account ID (from SSM)"
+
+
+Resources:
+
+  CURDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref 'AWS::AccountId'
+      DatabaseInput:
+        Name: aws_usage
+        Description: !Sub "Database with AWS Cost and Usage Report data for customerId ${CustomerId}"
+
+  # Glue Table for CUR data
+  CURTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref CURDatabase
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: cur
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          projection.enabled: "true"
+          projection.billing_period.type: "date"
+          projection.billing_period.format: "yyyy-MM"
+          projection.billing_period.range: "2020-01,2030-12"
+          projection.billing_period.interval: "1"
+          projection.billing_period.interval.unit: "MONTHS"
+          storage.location.template: !Sub "s3://${ReportingBucketName}/usage/cur/cloud2-usage-export/data/BILLING_PERIOD=${!billing_period}"
+        PartitionKeys:
+          - Name: billing_period
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: bill_bill_type
+              Type: string
+            - Name: bill_billing_entity
+              Type: string
+            - Name: bill_billing_period_end_date
+              Type: timestamp
+            - Name: bill_billing_period_start_date
+              Type: timestamp
+            - Name: bill_invoice_id
+              Type: string
+            - Name: bill_invoicing_entity
+              Type: string
+            - Name: bill_payer_account_id
+              Type: string
+            - Name: bill_payer_account_name
+              Type: string
+            - Name: cost_category
+              Type: map<string,string>
+            - Name: discount
+              Type: map<string,double>
+            - Name: discount_bundled_discount
+              Type: double
+            - Name: discount_total_discount
+              Type: double
+            - Name: identity_line_item_id
+              Type: string
+            - Name: identity_time_interval
+              Type: string
+            - Name: line_item_availability_zone
+              Type: string
+            - Name: line_item_blended_cost
+              Type: double
+            - Name: line_item_blended_rate
+              Type: string
+            - Name: line_item_currency_code
+              Type: string
+            - Name: line_item_legal_entity
+              Type: string
+            - Name: line_item_line_item_description
+              Type: string
+            - Name: line_item_line_item_type
+              Type: string
+            - Name: line_item_net_unblended_cost
+              Type: double
+            - Name: line_item_net_unblended_rate
+              Type: string
+            - Name: line_item_normalization_factor
+              Type: double
+            - Name: line_item_normalized_usage_amount
+              Type: double
+            - Name: line_item_operation
+              Type: string
+            - Name: line_item_product_code
+              Type: string
+            - Name: line_item_tax_type
+              Type: string
+            - Name: line_item_unblended_cost
+              Type: double
+            - Name: line_item_unblended_rate
+              Type: string
+            - Name: line_item_usage_account_id
+              Type: string
+            - Name: line_item_usage_account_name
+              Type: string
+            - Name: line_item_usage_amount
+              Type: double
+            - Name: line_item_usage_end_date
+              Type: timestamp
+            - Name: line_item_usage_start_date
+              Type: timestamp
+            - Name: line_item_usage_type
+              Type: string
+            - Name: pricing_currency
+              Type: string
+            - Name: pricing_lease_contract_length
+              Type: string
+            - Name: pricing_offering_class
+              Type: string
+            - Name: pricing_public_on_demand_cost
+              Type: double
+            - Name: pricing_public_on_demand_rate
+              Type: string
+            - Name: pricing_purchase_option
+              Type: string
+            - Name: pricing_rate_code
+              Type: string
+            - Name: pricing_rate_id
+              Type: string
+            - Name: pricing_term
+              Type: string
+            - Name: pricing_unit
+              Type: string
+            - Name: product
+              Type: struct<comment:string,fee_code:string,fee_description:string,from_location:string,from_location_type:string,from_region_code:string,instance_family:string,instance_type:string,instancesku:string,location:string,location_type:string,operation:string,pricing_unit:string,product_family:string,region_code:string,servicecode:string,sku:string,to_location:string,to_location_type:string,to_region_code:string,usagetype:string>
+            - Name: product_comment
+              Type: string
+            - Name: product_fee_code
+              Type: string
+            - Name: product_fee_description
+              Type: string
+            - Name: product_from_location
+              Type: string
+            - Name: product_from_location_type
+              Type: string
+            - Name: product_from_region_code
+              Type: string
+            - Name: product_instance_family
+              Type: string
+            - Name: product_instance_type
+              Type: string
+            - Name: product_instancesku
+              Type: string
+            - Name: product_location
+              Type: string
+            - Name: product_location_type
+              Type: string
+            - Name: product_operation
+              Type: string
+            - Name: product_pricing_unit
+              Type: string
+            - Name: product_product_family
+              Type: string
+            - Name: product_region_code
+              Type: string
+            - Name: product_servicecode
+              Type: string
+            - Name: product_sku
+              Type: string
+            - Name: product_to_location
+              Type: string
+            - Name: product_to_location_type
+              Type: string
+            - Name: product_to_region_code
+              Type: string
+            - Name: product_usagetype
+              Type: string
+            - Name: reservation_amortized_upfront_cost_for_usage
+              Type: double
+            - Name: reservation_amortized_upfront_fee_for_billing_period
+              Type: double
+            - Name: reservation_availability_zone
+              Type: string
+            - Name: reservation_effective_cost
+              Type: double
+            - Name: reservation_end_time
+              Type: string
+            - Name: reservation_modification_status
+              Type: string
+            - Name: reservation_net_amortized_upfront_cost_for_usage
+              Type: double
+            - Name: reservation_net_amortized_upfront_fee_for_billing_period
+              Type: double
+            - Name: reservation_net_effective_cost
+              Type: double
+            - Name: reservation_net_recurring_fee_for_usage
+              Type: double
+            - Name: reservation_net_unused_amortized_upfront_fee_for_billing_period
+              Type: double
+            - Name: reservation_net_unused_recurring_fee
+              Type: double
+            - Name: reservation_net_upfront_value
+              Type: double
+            - Name: reservation_normalized_units_per_reservation
+              Type: string
+            - Name: reservation_number_of_reservations
+              Type: string
+            - Name: reservation_recurring_fee_for_usage
+              Type: double
+            - Name: reservation_reservation_a_r_n
+              Type: string
+            - Name: reservation_start_time
+              Type: string
+            - Name: reservation_subscription_id
+              Type: string
+            - Name: reservation_total_reserved_normalized_units
+              Type: string
+            - Name: reservation_total_reserved_units
+              Type: string
+            - Name: reservation_units_per_reservation
+              Type: string
+            - Name: reservation_unused_amortized_upfront_fee_for_billing_period
+              Type: double
+            - Name: reservation_unused_normalized_unit_quantity
+              Type: double
+            - Name: reservation_unused_quantity
+              Type: double
+            - Name: reservation_unused_recurring_fee
+              Type: double
+            - Name: reservation_upfront_value
+              Type: double
+            - Name: resource_tags
+              Type: map<string,string>
+            - Name: savings_plan_amortized_upfront_commitment_for_billing_period
+              Type: double
+            - Name: savings_plan_end_time
+              Type: string
+            - Name: savings_plan_instance_type_family
+              Type: string
+            - Name: savings_plan_net_amortized_upfront_commitment_for_billing_period
+              Type: double
+            - Name: savings_plan_net_recurring_commitment_for_billing_period
+              Type: double
+            - Name: savings_plan_net_savings_plan_effective_cost
+              Type: double
+            - Name: savings_plan_offering_type
+              Type: string
+            - Name: savings_plan_payment_option
+              Type: string
+            - Name: savings_plan_purchase_term
+              Type: string
+            - Name: savings_plan_recurring_commitment_for_billing_period
+              Type: double
+            - Name: savings_plan_region
+              Type: string
+            - Name: savings_plan_savings_plan_a_r_n
+              Type: string
+            - Name: savings_plan_savings_plan_effective_cost
+              Type: double
+            - Name: savings_plan_savings_plan_rate
+              Type: double
+            - Name: savings_plan_start_time
+              Type: string
+            - Name: savings_plan_total_commitment_to_date
+              Type: double
+            - Name: savings_plan_used_commitment
+              Type: double
+          Location: !Sub "s3://${ReportingBucketName}/usage/cur/cloud2-usage-export/data/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+
+  # Glue Table for FOCUS data
+  FocusTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref CURDatabase
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: focus
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          projection.enabled: "true"
+          projection.billing_period.type: "date"
+          projection.billing_period.format: "yyyy-MM"
+          projection.billing_period.range: "2020-01,2030-12"
+          projection.billing_period.interval: "1"
+          projection.billing_period.interval.unit: "MONTHS"
+          storage.location.template: !Sub "s3://${ReportingBucketName}/usage/focus/cloud2-usage-export-focus/data/BILLING_PERIOD=${!billing_period}"
+        PartitionKeys:
+          - Name: billing_period
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: AvailabilityZone
+              Type: string
+            - Name: BilledCost
+              Type: double
+            - Name: BillingAccountId
+              Type: string
+            - Name: BillingAccountName
+              Type: string
+            - Name: BillingCurrency
+              Type: string
+            - Name: BillingPeriodEnd
+              Type: timestamp
+            - Name: BillingPeriodStart
+              Type: timestamp
+            - Name: ChargeCategory
+              Type: string
+            - Name: ChargeClass
+              Type: string
+            - Name: ChargeDescription
+              Type: string
+            - Name: ChargeFrequency
+              Type: string
+            - Name: ChargePeriodEnd
+              Type: timestamp
+            - Name: ChargePeriodStart
+              Type: timestamp
+            - Name: CommitmentDiscountCategory
+              Type: string
+            - Name: CommitmentDiscountId
+              Type: string
+            - Name: CommitmentDiscountName
+              Type: string
+            - Name: CommitmentDiscountStatus
+              Type: string
+            - Name: CommitmentDiscountType
+              Type: string
+            - Name: ConsumedQuantity
+              Type: double
+            - Name: ConsumedUnit
+              Type: string
+            - Name: ContractedCost
+              Type: double
+            - Name: ContractedUnitPrice
+              Type: double
+            - Name: EffectiveCost
+              Type: double
+            - Name: InvoiceIssuerName
+              Type: string
+            - Name: ListCost
+              Type: double
+            - Name: ListUnitPrice
+              Type: double
+            - Name: PricingCategory
+              Type: string
+            - Name: PricingQuantity
+              Type: double
+            - Name: PricingUnit
+              Type: string
+            - Name: ProviderName
+              Type: string
+            - Name: PublisherName
+              Type: string
+            - Name: RegionId
+              Type: string
+            - Name: RegionName
+              Type: string
+            - Name: ResourceId
+              Type: string
+            - Name: ResourceName
+              Type: string
+            - Name: ResourceType
+              Type: string
+            - Name: ServiceCategory
+              Type: string
+            - Name: ServiceName
+              Type: string
+            - Name: SkuId
+              Type: string
+            - Name: SkuPriceId
+              Type: string
+            - Name: SubAccountId
+              Type: string
+            - Name: SubAccountName
+              Type: string
+            - Name: Tags
+              Type: map<string,string>
+            - Name: X_CostCategories
+              Type: map<string,string>
+            - Name: X_Discounts
+              Type: map<string,double>
+            - Name: X_Operation
+              Type: string
+            - Name: X_ServiceCode
+              Type: string
+            - Name: X_UsageType
+              Type: string
+          Location: !Sub "s3://${ReportingBucketName}/usage/focus/cloud2-usage-export-focus/data/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+
+  RegisterS3Location:
+    Type: AWS::LakeFormation::Resource
+    Properties:
+      ResourceArn: !Sub 'arn:aws:s3:::${ReportingBucketName}'
+      UseServiceLinkedRole: true
+
+
+  CURShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: customer-cur-share
+      Principals: 
+        - !Sub '${OpsUiAccountId}'
+      ResourceArns:
+        - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CURDatabase}/cur'
+
+  CURTableTagAssociations:
+    Type: AWS::LakeFormation::TagAssociation
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref AWS::AccountId
+          DatabaseName: !Ref CURDatabase
+          Name: !Ref CURTable
+      LFTags:
+        - CatalogId: !Ref AWS::AccountId
+          TagKey: data-role
+          TagValues:
+            - producer
+
+  FocusShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: customer-focus-share
+      Principals: 
+        - !Sub '${OpsUiAccountId}'
+      ResourceArns:
+        - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CURDatabase}/focus'
+
+  FocusTableTagAssociations:
+    Type: AWS::LakeFormation::TagAssociation
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref AWS::AccountId
+          DatabaseName: !Ref CURDatabase
+          Name: !Ref FocusTable
+      LFTags:
+        - CatalogId: !Ref AWS::AccountId
+          TagKey: data-role
+          TagValues:
+            - producer
+
+Outputs:
+  DatabaseName:
+    Description: "Name of the created Glue database"
+    Value: !Ref CURDatabase
+  
+  CURTableName:
+    Description: "Name of the CUR table"
+    Value: !Ref CURTable
+  
+  FocusTableName:
+    Description: "Name of the FOCUS table"
+    Value: !Ref FocusTable
+  

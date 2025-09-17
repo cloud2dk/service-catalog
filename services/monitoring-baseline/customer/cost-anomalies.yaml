@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Cost Anomaly Monitor Configuration"
+        Parameters:
+          - UseExistingMonitor
+          - ExistingMonitorArn
+          - SubscriptionTopicName
+    ParameterLabels:
+      UseExistingMonitor:
+        default: "Use Existing Monitor?"
+      ExistingMonitorArn:
+        default: "Existing Monitor ARN (Optional)"
+      SubscriptionTopicName:
+        default: "SNS Topic Name for Alerts"
+  TemplateInfo:
+    Description: |
+      This template deploys a Cost Anomaly Monitor and Subscription. If 'UseExistingMonitor' is 'true' and 'ExistingMonitorArn' is provided, it will be used for the subscription and no new monitor will be created. If 'UseExistingMonitor' is 'false', a new monitor named 'cloud2-monitor' will be created and used for the subscription.
+
+Parameters:
+  UseExistingMonitor:
+    Type: String
+    AllowedValues: [ "true", "false" ]
+    Default: "false"
+    Description: |
+      Set to 'true' to use an existing monitor ARN. If 'false', a new monitor will be created and used.
+  ExistingMonitorArn:
+    Type: String
+    Default: ""
+    Description: |
+      Provide the ARN of an existing monitor if UseExistingMonitor is 'true'. The ARN should look like: arn:aws:ce:<region>:<account-id>:anomalymonitor/<monitor-id>. If 'false', leave this blank and a new monitor named 'cloud2-monitor' will be created and used.
+  SubscriptionTopicName:
+    Type: String
+    Description: |
+      The name of the SNS topic to which cost anomaly alerts will be sent. Defaults to 'cloud2-events'.
+    Default: "cloud2-events"
+
+Conditions:
+  CreateNewMonitor: !Equals [ !Ref ExistingMonitorArn, "" ]
+
+Resources:
+  CostAnormalyMonitor:
+    Type: AWS::CE::AnomalyMonitor
+    Condition: CreateNewMonitor
+    Properties:
+      MonitorName: cloud2-monitor
+      MonitorDimension: SERVICE
+      MonitorType: DIMENSIONAL
+
+  CostAnormalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Properties:
+      SubscriptionName: cloud2-alerts
+      MonitorArnList:
+        - !If
+            - CreateNewMonitor
+            - !Ref CostAnormalyMonitor
+            - !Ref ExistingMonitorArn
+      Frequency: IMMEDIATE
+      Subscribers:
+        - Address: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SubscriptionTopicName}"
+          Type: SNS
+      ThresholdExpression: |
+        {
+          "And": [
+            {
+              "Dimensions": {
+                "Key": "ANOMALY_TOTAL_IMPACT_PERCENTAGE",
+                "MatchOptions": [ "GREATER_THAN_OR_EQUAL" ],
+                "Values": [ "20" ]
+              }
+            },
+            {
+              "Dimensions": {
+                "Key": "ANOMALY_TOTAL_IMPACT_ABSOLUTE",
+                "MatchOptions": [ "GREATER_THAN_OR_EQUAL" ],
+                "Values": [ "10" ]
+              }
+            }
+          ]
+        }
