@@ -189,7 +189,7 @@ setup_product() {
             --name "$product_name" \
             --owner "Cloud2 Operations" \
             --product-type "CLOUD_FORMATION_TEMPLATE" \
-            --provisioning-artifact-parameters "Name=$VERSION,Description=Version $VERSION,Info={LoadTemplateFromURL=$template_url}" \
+            --provisioning-artifact-parameters "Name=$VERSION,Description=Version $VERSION,Info={LoadTemplateFromURL=$template_url},Type=CLOUD_FORMATION_TEMPLATE" \
             --query 'ProductViewDetail.ProductViewSummary.ProductId' \
             --output text --region "$region")
 
