@@ -93,7 +93,7 @@ setup_products_for_portfolio() {
         local product_scope=$(echo "$product_line" | yq eval '.scope // "global"' | tr -d '"')
 
         # Skip regionally-pinned products in wrong regions
-        if [ "$product_scope" != "global" ] && [ "$product_scope" != "$region" ]; then
+        if [ "$product_scope" != "global" ] && [ "$product_scope" != "regional" ] && [ "$product_scope" != "$region" ]; then
             echo "    Skipping product: $product_name (pinned to $product_scope, current region: $region)"
             continue
         fi

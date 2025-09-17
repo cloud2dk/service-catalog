@@ -64,9 +64,9 @@ package_product() {
 
     # Determine which regions to package for based on scope
     local target_regions
-    if [ "$product_scope" = "global" ]; then
+    if [ "$product_scope" = "global" ] || [ "$product_scope" = "regional" ]; then
         target_regions="$ACTIVE_REGIONS"
-        echo "Packaging $product_name for all regions: $(echo $ACTIVE_REGIONS | tr ',' ' ') (scope: global)"
+        echo "Packaging $product_name for all regions: $(echo $ACTIVE_REGIONS | tr ',' ' ') (scope: $product_scope)"
     else
         target_regions="$product_scope"
         echo "Packaging $product_name for pinned region: $product_scope (scope: $product_scope)"
