@@ -139,8 +139,12 @@ manage_product_versions() {
     if [ "$active_artifacts" -gt "$MAX_ACTIVE_VERSIONS" ]; then
         echo "        Need to deprecate $(($active_artifacts - $MAX_ACTIVE_VERSIONS)) versions..."
 
-        # Get artifacts to deprecate (skip first MAX_ACTIVE_VERSIONS, which are the newest active ones)
-        local artifacts_to_deprecate=$(echo "$artifacts" | jq -r ".[$MAX_ACTIVE_VERSIONS:] | .[] | select(.Active == true) | .Id")
+        # Get ONLY active artifacts, sort by creation time, then get ones to deprecate
+        # First get only active artifacts sorted by creation time (newest first)
+        local active_artifacts_sorted=$(echo "$artifacts" | jq '[.[] | select(.Active == true)] | sort_by(.CreatedTime) | reverse')
+
+        # Get artifacts to deprecate (active artifacts beyond the first MAX_ACTIVE_VERSIONS)
+        local artifacts_to_deprecate=$(echo "$active_artifacts_sorted" | jq -r ".[$MAX_ACTIVE_VERSIONS:] | .[] | .Id")
 
         if [ -z "$artifacts_to_deprecate" ]; then
             echo "        No artifacts to deprecate"
@@ -148,7 +152,7 @@ manage_product_versions() {
         fi
 
         for artifact_id in $artifacts_to_deprecate; do
-            local artifact_name=$(echo "$artifacts" | jq -r ".[] | select(.Id == \"$artifact_id\") | .Name")
+            local artifact_name=$(echo "$active_artifacts_sorted" | jq -r ".[] | select(.Id == \"$artifact_id\") | .Name")
             echo "        Deprecating artifact: $artifact_name (ID: $artifact_id)"
 
             aws servicecatalog update-provisioning-artifact \
