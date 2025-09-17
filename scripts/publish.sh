@@ -47,30 +47,39 @@ package_product() {
     local service_name
     service_name=$(yq eval '.service' manifest.yaml)
 
-    # Extract product template path from manifest
+    # Extract product template path and scope from manifest
     local template_path=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[] | select(.name == \"$product_name\") | .template" manifest.yaml | tr -d '"')
+    local product_scope=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[] | select(.name == \"$product_name\") | .scope // \"global\"" manifest.yaml | tr -d '"')
     local template_name=$(basename "${template_path%.*}")
-    
+
     # Get the SAM build output directory for this product
-    local product_dir=$(dirname "$template_path")/$template_name    
+    local product_dir=$(dirname "$template_path")/$template_name
     local template_file="$product_dir/template.yaml"
-    
+
     # Verify template file exists
     if [ ! -f "$template_file" ]; then
         echo "Error: Template file not found at $template_file"
         exit 1
     fi
-    
-    echo "Packaging $product_name for $(echo $ACTIVE_REGIONS | tr ',' ' ') regions"
+
+    # Determine which regions to package for based on scope
+    local target_regions
+    if [ "$product_scope" = "global" ]; then
+        target_regions="$ACTIVE_REGIONS"
+        echo "Packaging $product_name for all regions: $(echo $ACTIVE_REGIONS | tr ',' ' ') (scope: global)"
+    else
+        target_regions="$product_scope"
+        echo "Packaging $product_name for pinned region: $product_scope (scope: $product_scope)"
+    fi
 
     local s3_prefix="services/$service_name/$VERSION"
     # Preserve the original template path structure for S3
     local s3_product_path="$s3_prefix/$(dirname "$template_path")"
     
 
-    IFS=',' read -ra REGIONS <<< "$ACTIVE_REGIONS"
-    
-    
+    IFS=',' read -ra REGIONS <<< "$target_regions"
+
+
     for region in "${REGIONS[@]}"; do
         region=$(echo "$region" | xargs)
         

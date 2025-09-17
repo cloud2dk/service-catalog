@@ -87,14 +87,22 @@ setup_products_for_portfolio() {
     local service_name=$4
 
     # Process each product in this portfolio
-    yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[].name" manifest.yaml | while read -r product_name; do
-        local template_path=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[] | select(.name == \"$product_name\") | .template" manifest.yaml | tr -d '"')
+    yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[]" manifest.yaml | while IFS= read -r product_line; do
+        local product_name=$(echo "$product_line" | yq eval '.name' | tr -d '"')
+        local template_path=$(echo "$product_line" | yq eval '.template' | tr -d '"')
+        local product_scope=$(echo "$product_line" | yq eval '.scope // "global"' | tr -d '"')
+
+        # Skip regionally-pinned products in wrong regions
+        if [ "$product_scope" != "global" ] && [ "$product_scope" != "$region" ]; then
+            echo "    Skipping product: $product_name (pinned to $product_scope, current region: $region)"
+            continue
+        fi
 
         # Build template URL using same bucket naming as publish.sh
         local sam_deploy_bucket_name="cloud2-sam-deploy-assets-${SERVICE_ACCOUNT_ID}-${region}"
         local template_url="https://s3.amazonaws.com/$sam_deploy_bucket_name/services/$service_name/$VERSION/$template_path"
 
-        echo "    Setting up product: $product_name"
+        echo "    Setting up product: $product_name (scope: $product_scope)"
         setup_product "$product_name" "$portfolio_id" "$template_url" "$region"
     done
 }
