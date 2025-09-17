@@ -205,12 +205,148 @@ HumanLayer developed this methodology to address:
 4. **Scaling**: How does the methodology perform with very large teams or repositories?
 5. **Tooling**: What additional tooling could enhance the agent coordination and documentation workflow?
 
+## Implementation Guide: How to Extract and Implement HumanLayer System
+
+### Step 1: Extract Command Files
+**Source URLs** - Get complete markdown content from:
+```
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/commands/research_codebase.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/commands/create_plan.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/commands/implement_plan.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/commands/commit.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/commands/describe_pr.md
+```
+
+**Implementation Method**:
+1. Use WebFetch to get complete content of each command
+2. Copy markdown content directly to `.claude/commands/[filename].md`
+3. Adapt any HumanLayer-specific references (e.g., user directories)
+4. Test command accessibility via Claude Code
+
+### Step 2: Extract Agent Files
+**Source URLs** - Get complete markdown content from:
+```
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/codebase-locator.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/codebase-analyzer.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/codebase-pattern-finder.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/thoughts-locator.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/thoughts-analyzer.md
+https://raw.githubusercontent.com/humanlayer/humanlayer/main/.claude/agents/web-search-researcher.md
+```
+
+**Implementation Method**:
+1. Create `.claude/agents/` directory
+2. Use WebFetch to get complete content of each agent
+3. Copy markdown content directly to `.claude/agents/[filename].md`
+4. Adapt directory references (allison/ → david/)
+5. Test agent spawning via Task tool
+
+### Step 3: Key Command Implementations
+
+#### `/research_codebase` Implementation Details
+- **Entry Response**: "I'm ready to research the codebase. Please provide your research question..."
+- **Process**: Read mentioned files FULLY → TodoWrite plan → spawn all 6 agents in parallel → synthesize results
+- **Output**: Research document in `thoughts/shared/research/YYYY-MM-DD-ENG-XXXX-description.md`
+- **Critical**: Always read files before spawning sub-agents
+
+#### `/create_plan` Implementation Details
+- **Template Structure**: Must include Overview, Current State, Desired End State, Implementation Phases
+- **Success Criteria**: Separate "Automated Verification" (commands) and "Manual Verification" (user testing)
+- **Process**: Context gathering → research → plan outline approval → detailed writing → sync
+- **Output**: Plan in `thoughts/shared/plans/YYYY-MM-DD-ENG-XXXX-description.md`
+
+#### `/implement_plan` Implementation Details
+- **Approach**: Read plan fully → update checkboxes → implement phase by phase → verify with `make check test`
+- **Error Handling**: Structured format for plan-reality mismatches
+- **Progress**: Update plan checkboxes as tasks complete
+- **Verification**: Run success criteria after each phase
+
+#### `/commit` Implementation Details
+- **Critical Restrictions**: NO Claude attribution, NO co-author lines, user-authored commits only
+- **Process**: Review changes → plan commits → get approval → execute with specific file staging
+- **Message Style**: Imperative mood, focus on "why" not just "what"
+- **Staging**: Use `git add [specific-files]` never `-A` or `.`
+
+#### `/describe_pr` Implementation Details
+- **Requirements**: Needs `thoughts/shared/pr_description.md` template file
+- **Process**: Read template → identify PR → analyze changes → verify tests → generate description → update GitHub
+- **GitHub Integration**: Uses `gh pr edit {number} --body-file` to update PR
+- **Output**: Description saved to `thoughts/shared/prs/{number}_description.md`
+
+### Step 4: Agent Implementation Details
+
+#### Discovery Agents
+- **`codebase-locator`**: Finds WHERE code lives using Grep, Glob, LS
+- **`thoughts-locator`**: Discovers documents in thoughts/ directory structure
+- **Key Pattern**: Focus on location discovery, NOT content analysis
+
+#### Analysis Agents
+- **`codebase-analyzer`**: Deep implementation analysis with precise file:line references
+- **`thoughts-analyzer`**: Extract high-value insights from documents with aggressive filtering
+- **Key Pattern**: Surgical precision analysis with concrete details
+
+#### Pattern and Research Agents
+- **`codebase-pattern-finder`**: Find similar implementations with actual code examples
+- **`web-search-researcher`**: External web research with strategic search approaches
+- **Key Pattern**: Provide concrete, reusable examples and authoritative sources
+
+### Step 5: Directory Structure Requirements
+
+**Must Create**:
+```
+.claude/
+├── commands/          ✅ Exists
+│   ├── research_codebase.md
+│   ├── create_plan.md
+│   ├── implement_plan.md
+│   ├── commit.md
+│   └── describe_pr.md
+└── agents/            ❌ Create this
+    ├── codebase-locator.md
+    ├── codebase-analyzer.md
+    ├── codebase-pattern-finder.md
+    ├── thoughts-locator.md
+    ├── thoughts-analyzer.md
+    └── web-search-researcher.md
+
+thoughts/              ✅ Exists + organized
+├── shared/
+│   ├── research/      ✅ Ready
+│   ├── plans/         ✅ Ready
+│   ├── tickets/       ✅ Ready
+│   ├── prs/           ✅ Ready
+│   └── pr_description.md  ❌ Need to create template
+├── david/             ✅ Ready
+├── global/            ✅ Ready
+└── searchable/        ✅ Ready
+```
+
+### Step 6: Testing Implementation
+
+**Command Testing**:
+1. Test each command individually with simple tasks
+2. Verify agent spawning works via Task tool
+3. Confirm document creation in correct thoughts/ locations
+4. Test parallel agent coordination
+
+**Integration Testing**:
+1. Complete research → plan → implement → commit → PR cycle
+2. Verify thoughts directory organization and discovery
+3. Test on actual infrastructure tasks (AWS, YAML, Python lambdas)
+
+### Step 7: Customization for Infrastructure Projects
+
+**Adapt for cloud2dk/service-catalog**:
+- **Agent Focus**: Emphasize YAML, CloudFormation, Python lambda analysis
+- **Service Structure**: Multi-service architecture awareness (monitoring, reporting, access)
+- **AWS Context**: Include AWS service patterns in codebase-pattern-finder
+- **GitHub Integration**: Ensure workflows and scripts are discoverable
+
 ## Implementation Recommendations
 
-For our cloud2dk/service-catalog repository:
-1. **Start with Core Commands**: Implement all 5 commands first
-2. **Create Agent Framework**: Implement all 6 specialized agents
-3. **Directory Structure**: Set up proper thoughts/ organization
-4. **Templates**: Create documentation templates for our infrastructure focus
-5. **Integration Testing**: Test complete resource-plan-code cycles on real tasks
-6. **Customization**: Adapt agents for AWS infrastructure and multi-service architecture
+**Priority Order**:
+1. **Extract and implement agents first** - Foundation for command system
+2. **Implement `/research_codebase`** - Test agent coordination
+3. **Implement `/create_plan`** - Verify planning workflow
+4. **Complete remaining commands** - Build full cycle
+5. **Integration testing** - Ensure end-to-end functionality
