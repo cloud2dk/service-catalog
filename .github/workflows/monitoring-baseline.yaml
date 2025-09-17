@@ -72,6 +72,7 @@ jobs:
         env:
           VERSION: ${{ env.VERSION }}
           SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ../../../scripts/publish.sh dev
@@ -102,7 +103,8 @@ jobs:
         working-directory: services/monitoring-baseline/artifacts
         env:
           VERSION: ${{ env.VERSION }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SERVICE_ACCOUNT_ID: ${{ env.SERVICE_ACCOUNT_ID }}
+          ACTIVE_REGIONS: ${{ env.ACTIVE_REGIONS }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ../../../scripts/publish.sh prod
