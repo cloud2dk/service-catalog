@@ -87,10 +87,12 @@ setup_products_for_portfolio() {
     local service_name=$4
 
     # Process each product in this portfolio
-    yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[]" manifest.yaml | while IFS= read -r product_line; do
-        local product_name=$(echo "$product_line" | yq eval '.name' | tr -d '"')
-        local template_path=$(echo "$product_line" | yq eval '.template' | tr -d '"')
-        local product_scope=$(echo "$product_line" | yq eval '.scope // "global"' | tr -d '"')
+    local product_count=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products | length" manifest.yaml)
+
+    for (( i=0; i<product_count; i++ )); do
+        local product_name=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[$i].name" manifest.yaml | tr -d '"')
+        local template_path=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[$i].template" manifest.yaml | tr -d '"')
+        local product_scope=$(yq eval ".portfolios[] | select(.name == \"$portfolio_name\") | .products[$i].scope // \"global\"" manifest.yaml | tr -d '"')
 
         # Skip regionally-pinned products in wrong regions
         if [ "$product_scope" != "global" ] && [ "$product_scope" != "regional" ] && [ "$product_scope" != "$region" ]; then
