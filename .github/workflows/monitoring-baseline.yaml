@@ -39,10 +39,14 @@ jobs:
     needs:
       - build
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: monitoring-baseline
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,10 +71,14 @@ jobs:
     needs:
       - dev-publish
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: monitoring-baseline
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
 
       - name: Deploy Service Catalog
         uses: ./.github/actions/service-catalog-release
@@ -89,10 +97,14 @@ jobs:
     needs:
       - dev-release
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: monitoring-baseline
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -117,10 +129,14 @@ jobs:
     needs:
       - prod-publish
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: monitoring-baseline
+          name: artifacts
+          path: services/monitoring-baseline/artifacts
 
       - name: Deploy Service Catalog
         uses: ./.github/actions/service-catalog-release

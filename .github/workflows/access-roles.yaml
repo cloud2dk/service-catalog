@@ -38,10 +38,14 @@ jobs:
     needs:
       - build
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: access-roles
+          name: artifacts
+          path: services/access-roles/artifacts
 
       - name: Publish Dev Portfolios
         uses: ./.github/actions/service-catalog-publish
@@ -60,10 +64,14 @@ jobs:
     needs:
       - dev-publish
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: access-roles
+          name: artifacts
+          path: services/access-roles/artifacts
 
       - name: Deploy Service Catalog
         uses: ./.github/actions/service-catalog-release
@@ -82,10 +90,14 @@ jobs:
     needs:
       - dev-release
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: access-roles
+          name: artifacts
+          path: services/access-roles/artifacts
 
       - name: Publish Prod Portfolios
         uses: ./.github/actions/service-catalog-publish
@@ -104,10 +116,14 @@ jobs:
     needs:
       - prod-publish
     steps:
-      - name: Setup
-        uses: ./.github/actions/service-catalog-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v4
         with:
-          service-directory: access-roles
+          name: artifacts
+          path: services/access-roles/artifacts
 
       - name: Deploy Service Catalog
         uses: ./.github/actions/service-catalog-release
