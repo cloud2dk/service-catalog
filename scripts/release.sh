@@ -212,7 +212,7 @@ setup_product() {
             echo "      Adding version $VERSION to existing product"
             aws servicecatalog create-provisioning-artifact \
                 --product-id "$product_id" \
-                --parameters "Name=$VERSION,Description=Version $VERSION,Info={LoadTemplateFromURL=$template_url}" \
+                --parameters "Name=$VERSION,Description=Version $VERSION,Info={LoadTemplateFromURL=$template_url},Type=CLOUD_FORMATION_TEMPLATE" \
                 --region "$region"
             echo "      ✓ Version $VERSION added to product: $product_id"
 
