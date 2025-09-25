@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  OperationsAccountId:
+    Type: String
+    Description: The AWS account ID of the operations account
+
+  OperationsEventBusName:
+    Type: String
+    Description: The event bus name in the operations account
+    Default: cloud2-customer-events
+
+Resources:
+  # Lambda function for call-home functionality
+  CallHomeLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloud2-call-home-lambda
+      CodeUri: lambdas/call_home/
+      Handler: index.handler
+      Runtime: python3.9
+      Timeout: 30
+      Environment:
+        Variables:
+          OPERATIONS_ACCOUNT_ID: !Ref OperationsAccountId
+          EVENT_BUS_ARN: !Sub "arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          SNS_TOPIC_ARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:cloud2-events"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource: !Sub "arn:aws:events:${AWS::Region}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:cloud2-events"
+
+  # IAM role for SSM automation to invoke Lambda
+  CallHomeSSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cloud2-call-home-ssm-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CallHomeLambdaInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt CallHomeLambda.Arn
+
+  # SSM Document that invokes the Lambda
+  CallHomeSimulatorDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      DocumentFormat: YAML
+      Name: cloud2-call-home-simulator
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "0.3"
+        description: Automation for placing a call-home event using Lambda
+        assumeRole: !GetAtt CallHomeSSMRole.Arn
+        parameters:
+          status:
+            type: String
+            description: Status of the call-home event
+            default: success
+          origin:
+            type: String
+            description: Origin of the call-home event
+            default: ssm-automation
+          cause:
+            type: String
+            description: Cause of the call-home event
+            default: test
+        mainSteps:
+          - name: InvokeCallHomeLambda
+            action: aws:executeScript
+            inputs:
+              Runtime: python3.8
+              Handler: script_handler
+              Script: |-
+                import boto3
+                import json
+
+                def script_handler(events, context):
+                    lambda_client = boto3.client('lambda')
+
+                    # Get parameters from automation
+                    status = events.get('status', 'success')
+                    origin = events.get('origin', 'ssm-automation')
+                    cause = events.get('cause', 'test')
+
+                    # Prepare payload for Lambda
+                    payload = {
+                        'status': status,
+                        'origin': origin,
+                        'cause': cause
+                    }
+
+                    # Invoke the Lambda function
+                    response = lambda_client.invoke(
+                        FunctionName='cloud2-call-home-lambda',
+                        InvocationType='RequestResponse',
+                        Payload=json.dumps(payload)
+                    )
+
+                    # Parse response
+                    response_payload = json.loads(response['Payload'].read())
+
+                    return {
+                        'lambda_response': response_payload,
+                        'status_code': response.get('StatusCode', 200)
+                    }
+              InputPayload:
+                status: "{{ status }}"
+                origin: "{{ origin }}"
+                cause: "{{ cause }}"
