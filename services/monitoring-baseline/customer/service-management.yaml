@@ -290,12 +290,11 @@ Resources:
                     try:
                         print(json.dumps(event, indent=4))
                         
-                        # Get parameters directly from the root of the event object
-                        # No need for array handling since parameters are coming as direct string values
-                        Region = event.get('Region')
-                        ProductId = event.get('ProductId')
-                        Version = event.get('Version')
-                        ProvisioningParameters = event.get('ProvisioningParameters', '')
+                        # Handle array inputs by taking first element if it's a list (EventBridge InputTransformer wraps in arrays)
+                        Region = event['Region'][0] if isinstance(event['Region'], list) else event['Region']
+                        ProductId = event['ProductId'][0] if isinstance(event['ProductId'], list) else event['ProductId']
+                        Version = event['Version'][0] if isinstance(event['Version'], list) else event['Version']
+                        ProvisioningParameters = event['ProvisioningParameters'][0] if isinstance(event.get('ProvisioningParameters', []), list) else event.get('ProvisioningParameters', '')
                         
                         if not all([Region, ProductId, Version]):
                             raise Exception(f"Missing required parameters. Got: {event}")

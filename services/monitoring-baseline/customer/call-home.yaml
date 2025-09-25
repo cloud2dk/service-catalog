@@ -17,7 +17,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: cloud2-call-home-lambda
-      CodeUri: lambdas/call_home/
+      CodeUri: ./lambdas/call_home
       Handler: index.handler
       Runtime: python3.9
       Timeout: 30
