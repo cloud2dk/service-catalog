@@ -19,7 +19,7 @@ Resources:
       FunctionName: cloud2-call-home-lambda
       CodeUri: ./lambdas/call_home
       Handler: index.handler
-      Runtime: python3.9
+      Runtime: python3.12
       Timeout: 30
       Environment:
         Variables:
@@ -88,7 +88,7 @@ Resources:
           - name: InvokeCallHomeLambda
             action: aws:executeScript
             inputs:
-              Runtime: python3.8
+              Runtime: python3.12
               Handler: script_handler
               Script: |-
                 import boto3
