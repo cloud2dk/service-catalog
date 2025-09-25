@@ -3,13 +3,12 @@ Transform: AWS::Serverless-2016-10-31
 
 Parameters:
   OperationsAccountId:
-    Type: String
-    Description: The AWS account ID of the operations account
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-account-id
 
   OperationsEventBusName:
-    Type: String
-    Description: The event bus name in the operations account
-    Default: cloud2-customer-events
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cloud2/operations-event-bus-name
 
 Resources:
   # Lambda function for call-home functionality

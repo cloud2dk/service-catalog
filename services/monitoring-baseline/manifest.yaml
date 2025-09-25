@@ -92,10 +92,3 @@ portfolios:
         scope: global
         depends_on:
           - cloud2-monitoring-service-management
-        parameters:
-          OperationsAccountId:
-            Type: String
-            Description: The AWS account ID of the operations account
-          OperationsEventBusName:
-            Type: String
-            Description: The event bus name in the operations account
