@@ -10,6 +10,20 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /cloud2/operations-event-bus-name
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Pre-provided Configuration (from SSM)"
+        Parameters:
+          - OperationsAccountId
+          - OperationsEventBusName
+    ParameterLabels:
+      OperationsAccountId:
+        default: "Operations Account ID (from SSM)"
+      OperationsEventBusName:
+        default: "Event Bus Name (from SSM)"
+
 Resources:
   # Lambda function for call-home functionality
   CallHomeLambda:
