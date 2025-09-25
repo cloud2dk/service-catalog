@@ -85,44 +85,13 @@ Resources:
             default: test
         mainSteps:
           - name: InvokeCallHomeLambda
-            action: aws:executeScript
+            action: aws:invokeLambdaFunction
             inputs:
-              Runtime: python3.11
-              Handler: script_handler
-              Script: |-
-                import boto3
-                import json
-
-                def script_handler(events, context):
-                    lambda_client = boto3.client('lambda')
-
-                    # Get parameters from automation
-                    status = events.get('status', 'success')
-                    origin = events.get('origin', 'ssm-automation')
-                    cause = events.get('cause', 'test')
-
-                    # Prepare payload for Lambda
-                    payload = {
-                        'status': status,
-                        'origin': origin,
-                        'cause': cause
-                    }
-
-                    # Invoke the Lambda function
-                    response = lambda_client.invoke(
-                        FunctionName='cloud2-call-home-lambda',
-                        InvocationType='RequestResponse',
-                        Payload=json.dumps(payload)
-                    )
-
-                    # Parse response
-                    response_payload = json.loads(response['Payload'].read())
-
-                    return {
-                        'lambda_response': response_payload,
-                        'status_code': response.get('StatusCode', 200)
-                    }
-              InputPayload:
-                status: "{{ status }}"
-                origin: "{{ origin }}"
-                cause: "{{ cause }}"
+              FunctionName: cloud2-call-home-lambda
+              InvocationType: RequestResponse
+              Payload: |
+                {
+                  "status": "{{ status }}",
+                  "origin": "{{ origin }}",
+                  "cause": "{{ cause }}"
+                }
