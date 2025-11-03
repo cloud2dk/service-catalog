@@ -67,12 +67,15 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: cloud2-amazon-inspector
-      Description: Rule to forward Amazon Inspector events to the operations account
+      Description: Rule to forward Amazon Inspector v1 and v2 events to the operations account
       EventPattern:
         source:
           - aws.inspector
+          - aws.inspector2
         detail-type:
           - Inspector Finding
+          - Inspector2 Finding
+          - Finding
       Targets:
         - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
           Id: cloud2-amazon-inspector-target
@@ -131,3 +134,32 @@ Resources:
         - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
           Id: cloud2-backup-job-failed-target
           RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+
+  SecurityHubFindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-securityhub-findings
+      EventPattern:
+        source:
+          - aws.securityhub
+        detail-type:
+          - Security Hub Findings - Imported
+          - Security Hub Findings - Custom Action
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-securityhub-findings-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+
+  CostAnomalyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-cost-anomaly
+      Description: Rule to forward Cost Anomaly events to the operations account
+      EventPattern:
+        source:
+          - cloud2.ce.anomaly
+      Targets:
+        - Arn: !Sub "arn:aws:events:${OperationsRegion}:${OperationsAccountId}:event-bus/${OperationsEventBusName}"
+          Id: cloud2-cost-anomaly-target
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${CrossAccountEventsRole}"
+

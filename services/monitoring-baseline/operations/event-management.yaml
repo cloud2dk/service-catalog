@@ -280,13 +280,16 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: cloud2-inspector-findings
-      Description: Catches Amazon Inspector findings forwaded from customer accounts
+      Description: Catches Amazon Inspector v1 and v2 findings forwaded from customer accounts
       EventBusName: !Ref EventBus
       EventPattern:
         source:
           - aws.inspector
+          - aws.inspector2
         detail-type:
-          - Inspector Findings
+          - Inspector Finding
+          - Inspector2 Finding
+          - Finding
       State: ENABLED
       Targets:
         - Arn: !GetAtt FreshServiceFunction.Arn
@@ -377,8 +380,9 @@ Resources:
         source:
           - aws.securityhub
         detail-type:
-          - Security Hub Findings
-      State: DISABLED
+          - Security Hub Findings - Imported
+          - Security Hub Findings - Custom Action
+      State: ENABLED
       Targets:
         - Arn: !GetAtt FreshServiceFunction.Arn
           Id: FreshServiceTarget

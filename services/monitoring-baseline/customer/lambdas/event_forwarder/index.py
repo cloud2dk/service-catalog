@@ -29,10 +29,25 @@ def handler(event, context):
         except (KeyError, IndexError) as e:
             raise ValueError(f"Invalid SNS event structure: {str(e)}")
 
+        # Check if this is a cost anomaly message
+        source = 'cloud2.services'
+        detail_type = 'SNSMessage'
+        
+        try:
+            # Parse SNS message to detect cost anomaly
+            message_data = json.loads(sns_message)
+            if 'anomalyId' in message_data or 'anomalyScore' in message_data:
+                source = 'cloud2.ce.anomaly'
+                detail_type = 'CostAnomalyDetected'
+                logger.info("Detected cost anomaly message, using source: %s", source)
+        except (json.JSONDecodeError, TypeError):
+            # If message isn't JSON or doesn't contain anomaly fields, use default
+            logger.info("Using default source for non-anomaly message")
+
         # Prepare the event entry
         event_entry = {
-            'Source': 'cloud2.services',
-            'DetailType': 'SNSMessage',
+            'Source': source,
+            'DetailType': detail_type,
             'Detail': sns_message,
             'EventBusName': event_bus_arn
         }
