@@ -14,7 +14,7 @@ Parameters:
   OpsUiRegion:
     Type: String
     Description: The region of the ops-ui account
-    Default: us-central-1
+    Default: eu-central-1
 
   OpsUiEventBusName:
     Type: String
