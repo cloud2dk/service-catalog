@@ -48,6 +48,42 @@ Check the CloudWatch logs in the operations account for the SNS message:
 - Message contains the current timestamp and test payload
 - No errors in the processing pipeline
 
+## Security Hub Manual Test
+
+### Step 4: Send Manual Security Hub Finding
+
+Execute the following AWS CLI command to create a test Security Hub finding:
+
+```bash
+aws securityhub batch-import-findings \
+  --findings '[{
+    "SchemaVersion": "2018-10-08",
+    "Id": "manual-test-'$(date +%s)'",
+    "ProductArn": "arn:aws:securityhub:'${AWS_DEFAULT_REGION}':'$(aws sts get-caller-identity --query Account --output text)':product/'$(aws sts get-caller-identity --query Account --output text)'/default",
+    "GeneratorId": "manual-test-generator",
+    "AwsAccountId": "'$(aws sts get-caller-identity --query Account --output text)'",
+    "Types": ["Unusual Behaviors/Application"],
+    "Title": "Manual Test Security Event",
+    "Description": "Manual test event to verify Security Hub to Fresh integration",
+    "Severity": {"Label": "MEDIUM"},
+    "Confidence": 100,
+    "Criticality": 50,
+    "CreatedAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "UpdatedAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "Resources": [{
+      "Id": "arn:aws:lambda:'${AWS_DEFAULT_REGION}':'$(aws sts get-caller-identity --query Account --output text)':function:manual-test",
+      "Type": "AwsLambdaFunction",
+      "Region": "'${AWS_DEFAULT_REGION}'"
+    }]
+  }]' \
+  --profile paperturn-web-jump \
+  --region eu-west-1
+```
+
+### Step 5: Verify in Fresh
+
+Check Fresh for the new ticket created from the Security Hub finding within 2-3 minutes.
+
 ## Troubleshooting
 
 If the test fails:
@@ -55,3 +91,4 @@ If the test fails:
 - Check SNS topic permissions
 - Confirm operations account CloudWatch log group exists
 - Review IAM roles for cross-account access
+- For Security Hub: Ensure Security Hub is enabled and has proper EventBridge rules configured
