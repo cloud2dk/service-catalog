@@ -125,6 +125,69 @@ class EventDispatcher:
         self._send_to_fresh(fields)
         return fields
 
+    def handle_securityhub_event(self):
+        print(f"[HANDLER] Processing Security Hub Finding - source: {self.event.get('source')}, detail-type: {self.event.get('detail-type')}")
+
+        # Security Hub findings have severity in detail.findings[].Severity.Label
+        # Map Security Hub severity to Freshservice severity
+        try:
+            finding = self.event.get("detail", {})
+            if "findings" in finding and len(finding["findings"]) > 0:
+                severity_label = finding["findings"][0].get("Severity", {}).get("Label", "MEDIUM")
+                finding_id = finding["findings"][0].get("Id", "unknown")
+                finding_type = finding["findings"][0].get("Types", ["unknown"])[0] if finding["findings"][0].get("Types") else "unknown"
+            else:
+                severity_label = "MEDIUM"
+                finding_id = "unknown"
+                finding_type = "unknown"
+
+            # Map Security Hub severity labels to Freshservice severity
+            if severity_label in ["INFORMATIONAL", "LOW"]:
+                mapped_severity = "warning"
+            elif severity_label == "MEDIUM":
+                mapped_severity = "error"
+            else:  # HIGH, CRITICAL
+                mapped_severity = "critical"
+
+            self.event["severity"] = mapped_severity
+
+            print(f"[HANDLER] Security Hub - ID: {finding_id}, Type: {finding_type}, Severity: {severity_label} -> {mapped_severity}")
+
+        except (KeyError, IndexError) as e:
+            print(f"[ERROR] Failed to extract Security Hub severity, using default 'error': {e}")
+            self.event["severity"] = "error"
+
+        self.event["detail"]["eventName"] = "SecurityHubFinding"
+        fields = EventBridgeFields(self.event).to_dict()
+        self._send_to_fresh(fields)
+
+        print(f"[HANDLER] Security Hub Finding sent to Freshservice successfully")
+        return fields
+
+    def handle_sns_wrapped_event(self):
+        print(f"[HANDLER] Processing SNS-Wrapped Event - source: {self.event.get('source')}, detail-type: {self.event.get('detail-type')}")
+
+        # EventBridge already parsed the Detail JSON string into a dict
+        nested_event = self.event.get("detail")
+        if not nested_event:
+            print(f"[ERROR] SNS-wrapped event has no detail field")
+            raise ValueError("SNS-wrapped event has no detail field")
+
+        nested_source = nested_event.get("source")
+        nested_detail_type = nested_event.get("detail-type")
+        print(f"[HANDLER] Unwrapping nested event - source: {nested_source}, detail-type: {nested_detail_type}")
+
+        # Route based on the nested event's source
+        if nested_source == "aws.cost-anomaly-detection":
+            print(f"[HANDLER] Routing to Cost Anomaly handler")
+            # Replace the event with the nested event and call anomaly handler
+            self.event = nested_event
+            return self.handle_ce_anomaly_event()
+        else:
+            error_message = f"Unhandled nested event source in SNS wrapper: {nested_source}"
+            print(f"[ERROR] {error_message}")
+            raise ValueError(error_message)
+
     def default_handler(self):
         # Print the event type (or lack thereof) and raise an exception
         event_source = self.event.get("source", "Unknown")
@@ -133,12 +196,24 @@ class EventDispatcher:
         raise ValueError(error_message)  # You can choose the appropriate exception type
 
     def dispatch(self):
+        event_source = self.event.get("source", "Unknown")
+        event_detail_type = self.event.get("detail-type", "Unknown")
+        event_account = self.event.get("account", "Unknown")
+        event_region = self.event.get("region", "Unknown")
+
+        print(f"[DISPATCH] Received event - source: {event_source}, detail-type: {event_detail_type}, account: {event_account}, region: {event_region}")
+
         sources = {
             "aws.cloudwatch": self.handle_cloudwatch_alarm,
             "aws.health": self.handle_aws_health_event,
             "aws.guardduty": self.handle_guardduty_event,
             "aws.backup": self.backup_failed_event,
+            "aws.securityhub": self.handle_securityhub_event,
+            "cloud2.events": self.handle_sns_wrapped_event,
             "cloud2.ce.anomaly": self.handle_ce_anomaly_event
         }
-        handler = sources.get(self.event.get("source"), self.default_handler)
+
+        handler = sources.get(event_source, self.default_handler)
+        print(f"[DISPATCH] Routing to handler: {handler.__name__}")
+
         return handler()

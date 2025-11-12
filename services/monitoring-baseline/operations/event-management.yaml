@@ -262,11 +262,34 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: cloud2-cost-anomaly-detection
-      Description: Catches AWS Cost Anomaly Detection events forwaded from customer accounts
+      Description: Catches AWS Cost Anomaly Detection events forwaded from customer accounts (legacy - kept for backwards compatibility)
       EventBusName: !Ref EventBus
       EventPattern:
         source:
           - cloud2.ce.anomaly
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FreshServiceFunction.Arn
+          Id: FreshServiceTarget
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  CostAnomalyFromSNSRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cloud2-cost-anomaly-from-sns
+      Description: Catches AWS Cost Anomaly Detection events forwarded via SNS (actual implementation)
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - cloud2.events
+        detail-type:
+          - SNSMessage
+        detail:
+          source:
+            - aws.cost-anomaly-detection
       State: ENABLED
       Targets:
         - Arn: !GetAtt FreshServiceFunction.Arn
