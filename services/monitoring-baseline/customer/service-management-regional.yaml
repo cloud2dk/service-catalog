@@ -59,6 +59,37 @@ Resources:
         - Protocol: lambda
           Endpoint: !GetAtt EventForwarderFunction.Arn
 
+  EventTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventTopic
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+          - Sid: DefaultTopicAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - SNS:GetTopicAttributes
+              - SNS:SetTopicAttributes
+              - SNS:AddPermission
+              - SNS:RemovePermission
+              - SNS:DeleteTopic
+              - SNS:Subscribe
+              - SNS:ListSubscriptionsByTopic
+              - SNS:Publish
+            Resource: !Ref EventTopic
+            Condition:
+              StringEquals:
+                'AWS:SourceOwner': !Ref 'AWS::AccountId'
+          - Sid: CostAnomalyDetectionAccess
+            Effect: Allow
+            Principal:
+              Service: costalerts.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref EventTopic
 
   EventForwarderFunction:
     Type: AWS::Serverless::Function
