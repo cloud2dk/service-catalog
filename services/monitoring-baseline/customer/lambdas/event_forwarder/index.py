@@ -6,6 +6,44 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
+def extract_sns_message(event):
+    try:
+        return event['Records'][0]['Sns']['Message']
+    except (KeyError, IndexError) as e:
+        raise ValueError(f"Invalid SNS event structure: {str(e)}")
+
+
+def prepare_eventbridge_detail(sns_message):
+    try:
+        # Try to parse as JSON (validates it's already valid JSON)
+        json.loads(sns_message)
+        return sns_message
+    except (json.JSONDecodeError, TypeError):
+        # Wrap non-JSON messages in a JSON object
+        logger.info("Wrapped non-JSON message in object for EventBridge compatibility")
+        return json.dumps({'message': sns_message})
+
+
+def create_eventbridge_entry(detail, event_bus_arn):
+    return {
+        'Source': 'cloud2.events',
+        'DetailType': 'SNSMessage',
+        'Detail': detail,
+        'EventBusName': event_bus_arn
+    }
+
+
+def send_to_eventbridge(eventbridge_client, event_entry):
+    response = eventbridge_client.put_events(Entries=[event_entry])
+
+    if response.get('FailedEntryCount', 0) > 0:
+        logger.error("Failed to send events: %s", json.dumps(response))
+        raise Exception("Failed to send events to EventBridge")
+
+    logger.info("Successfully sent event to EventBridge: %s", json.dumps(response))
+
+
 def handler(event, context):
     try:
         logger.info("Received event: %s", json.dumps(event))
@@ -17,51 +55,21 @@ def handler(event, context):
 
         # Extract region from ARN for the client
         event_bus_region = event_bus_arn.split(":")[3]
-        
         logger.info("Using event bus ARN: %s in region: %s", event_bus_arn, event_bus_region)
 
-        eventbridge = boto3.client('events', region_name=event_bus_region)
-        
         # Extract and validate SNS message
-        try:
-            sns_message = event['Records'][0]['Sns']['Message']
-            logger.info("Received SNS message: %s", sns_message)
-        except (KeyError, IndexError) as e:
-            raise ValueError(f"Invalid SNS event structure: {str(e)}")
+        sns_message = extract_sns_message(event)
+        logger.info("Received SNS message for forwarding")
 
-        # Check if this is a cost anomaly message
-        source = 'cloud2.services'
-        detail_type = 'SNSMessage'
-        
-        try:
-            # Parse SNS message to detect cost anomaly
-            message_data = json.loads(sns_message)
-            if 'anomalyId' in message_data or 'anomalyScore' in message_data:
-                source = 'cloud2.ce.anomaly'
-                detail_type = 'CostAnomalyDetected'
-                logger.info("Detected cost anomaly message, using source: %s", source)
-        except (json.JSONDecodeError, TypeError):
-            # If message isn't JSON or doesn't contain anomaly fields, use default
-            logger.info("Using default source for non-anomaly message")
+        # Prepare EventBridge event entry
+        detail = prepare_eventbridge_detail(sns_message)
+        event_entry = create_eventbridge_entry(detail, event_bus_arn)
+        logger.info("Forwarding message to EventBridge")
 
-        # Prepare the event entry
-        event_entry = {
-            'Source': source,
-            'DetailType': detail_type,
-            'Detail': sns_message,
-            'EventBusName': event_bus_arn
-        }
-        logger.info("Prepared event entry: %s", json.dumps(event_entry))
+        # Send to EventBridge
+        eventbridge = boto3.client('events', region_name=event_bus_region)
+        send_to_eventbridge(eventbridge, event_entry)
 
-        # Send the event to EventBridge
-        response = eventbridge.put_events(Entries=[event_entry])
-        
-        # Check for failures
-        if response.get('FailedEntryCount', 0) > 0:
-            logger.error("Failed to send events: %s", json.dumps(response))
-            raise Exception("Failed to send events to EventBridge")
-
-        logger.info("Successfully sent event to EventBridge: %s", json.dumps(response))
         return {
             'statusCode': 200,
             'body': 'Event sent to EventBridge successfully!'
