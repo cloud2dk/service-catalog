@@ -38,19 +38,26 @@ class EventDispatcher:
         self.event = event
         self.formatter = EventFormatter()
 
-    def _send_to_fresh(self, event):
-        secret_name = os.environ.get('FRESH_WEBHOOK_SECRET')    
+    def _send_to_fresh(self, fields_or_event):
+        secret_name = os.environ.get('FRESH_WEBHOOK_SECRET')
         if not secret_name:
             raise ValueError("Secret name not found in environment variables")
-            
+
         secret = aws_helpers.get_secret_value(secret_name)
         print("Sending event to Fresh Webhook")
-        
+
+        # Template expects raw EventBridge event structure
+        # Extract source_event if we received a fields dict from EventBridgeFields.to_dict()
+        if isinstance(fields_or_event, dict) and 'source_event' in fields_or_event:
+            template_data = fields_or_event['source_event']
+        else:
+            template_data = fields_or_event
+
         # Format the event using the template
-        formatted_html = self.formatter.format_event(event)
+        formatted_html = self.formatter.format_event(template_data)
         print("Formatted HTML:")
         print(formatted_html)
-        
+
         # Send to Freshservice with HTML content type
         headers = {
             'Authorization': secret['auth_key'],
