@@ -68,7 +68,11 @@ class EventDispatcher:
 
     def handle_cloudwatch_alarm(self):
         print("Event Type: CloudWatch Alarm")
-        tags = aws_helpers.get_cloudwatch_alarm_tags(self.event["alarmArn"])
+        # EventBridge events have alarm ARN in resources array
+        alarm_arn = self.event.get("resources", [None])[0]
+        if not alarm_arn:
+            raise ValueError("CloudWatch alarm ARN not found in event resources")
+        tags = aws_helpers.get_cloudwatch_alarm_tags(alarm_arn)
         fields = CloudwatchFields(self.event, tags).to_dict()
         self._send_to_fresh(fields)
         return fields

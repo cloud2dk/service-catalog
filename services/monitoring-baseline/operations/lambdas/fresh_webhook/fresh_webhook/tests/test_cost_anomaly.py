@@ -6,7 +6,7 @@ def test_cost_anomaly_event():
         "version": "0",
         "id": "12345678-1234-1234-1234-123456789012",
         "detail-type": "CostAnomalyDetected",
-        "source": "aws.cost-management",
+        "source": "cloud2.ce.anomaly",
         "account": "123456789012",
         "time": "2024-03-21T12:00:00Z",
         "region": "us-east-1",
@@ -37,7 +37,8 @@ def test_cost_anomaly_event():
     
     dispatcher = EventDispatcher(event)
     result = dispatcher.dispatch()
-    
+
     assert result is not None
-    assert "ticket" in result
-    assert "html" in result 
+    assert "account_id" in result
+    assert "severity" in result
+    assert "source_event" in result 
